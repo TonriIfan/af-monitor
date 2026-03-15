@@ -1,0 +1,128 @@
+<template>
+  <div class="page-grid">
+    <section class="hero-panel">
+      <div class="hero-panel__copy">
+        <p class="section-eyebrow">Operational pulse</p>
+        <h3>把设备状态、风险分布和最新事件放在同一屏里。</h3>
+        <p>
+          这个总览页面针对毕设讲解设计：老师一眼能看到系统在采什么、判了什么、有没有风险事件。
+        </p>
+      </div>
+      <div class="hero-panel__chips">
+        <el-tag effect="plain">Django + DRF</el-tag>
+        <el-tag effect="plain">Vue + Element Plus</el-tag>
+        <el-tag effect="plain">规则版风险筛查</el-tag>
+      </div>
+    </section>
+
+    <section class="stats-row">
+      <StatCard eyebrow="设备数" :value="overview.counts.devices" hint="当前已绑定设备" icon="Cpu" />
+      <StatCard eyebrow="测量数" :value="overview.counts.measurements" hint="累计入库测量" icon="DataLine" />
+      <StatCard eyebrow="告警数" :value="overview.counts.alerts" hint="累计风险事件" icon="Bell" />
+      <StatCard eyebrow="未读告警" :value="overview.counts.unread_alerts" hint="等待处理的事件" icon="Warning" />
+    </section>
+
+    <section class="content-columns">
+      <article class="panel">
+        <div class="panel__header">
+          <div>
+            <p class="section-eyebrow">Risk distribution</p>
+            <h3>风险等级分布</h3>
+          </div>
+        </div>
+        <div class="risk-stack" v-if="overview.risk_distribution.length">
+          <RiskBar
+            v-for="item in overview.risk_distribution"
+            :key="item.risk_level"
+            :label="riskLabel(item.risk_level)"
+            :total="item.total"
+            :max="maxRiskTotal"
+          />
+        </div>
+        <el-empty v-else description="暂无分布数据" />
+      </article>
+
+      <article class="panel">
+        <div class="panel__header">
+          <div>
+            <p class="section-eyebrow">Recent alerts</p>
+            <h3>最新告警</h3>
+          </div>
+        </div>
+        <div class="timeline-list" v-if="overview.latest_alerts.length">
+          <div v-for="item in overview.latest_alerts" :key="item.id" class="timeline-item">
+            <div>
+              <strong>{{ item.title }}</strong>
+              <p>{{ item.device_id }} · {{ formatDateTime(item.created_at) }}</p>
+            </div>
+            <el-tag :type="riskTagType(item.level)">{{ riskLabel(item.level) }}</el-tag>
+          </div>
+        </div>
+        <el-empty v-else description="暂无告警" />
+      </article>
+    </section>
+
+    <article class="panel">
+      <div class="panel__header">
+        <div>
+          <p class="section-eyebrow">Latest measurements</p>
+          <h3>最新测量</h3>
+        </div>
+      </div>
+      <el-table :data="overview.latest_measurements" stripe>
+        <el-table-column prop="device_id" label="设备" min-width="140" />
+        <el-table-column prop="packet_kind" label="类型" min-width="120" />
+        <el-table-column label="解析结果" min-width="360">
+          <template #default="{ row }">
+            <pre class="json-chip">{{ JSON.stringify(row.parsed, null, 2) }}</pre>
+          </template>
+        </el-table-column>
+        <el-table-column label="风险" min-width="120">
+          <template #default="{ row }">
+            <el-tag :type="riskTagType(row.risk_level)">{{ riskLabel(row.risk_level) }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="时间" min-width="180">
+          <template #default="{ row }">{{ formatDateTime(row.measured_at) }}</template>
+        </el-table-column>
+      </el-table>
+    </article>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { computed, onMounted, reactive } from 'vue'
+import { ElMessage } from 'element-plus'
+
+import RiskBar from '../components/RiskBar.vue'
+import StatCard from '../components/StatCard.vue'
+import { api } from '../utils/api'
+import { formatDateTime, riskLabel, riskTagType } from '../utils/format'
+
+const overview = reactive({
+  counts: {
+    devices: 0,
+    measurements: 0,
+    alerts: 0,
+    unread_alerts: 0,
+  },
+  risk_distribution: [] as Array<{ risk_level: string; total: number }>,
+  latest_measurements: [] as Array<Record<string, any>>,
+  latest_alerts: [] as Array<Record<string, any>>,
+})
+
+const maxRiskTotal = computed(() =>
+  overview.risk_distribution.reduce((max, item) => Math.max(max, item.total), 0),
+)
+
+async function loadOverview() {
+  try {
+    const { data } = await api.get('/dashboard/overview')
+    Object.assign(overview, data)
+  } catch {
+    ElMessage.error('总览数据加载失败。')
+  }
+}
+
+onMounted(loadOverview)
+</script>
