@@ -105,7 +105,7 @@
 
 其中生产环境 API 地址建议为：
 
-```env
+```dotenv
 VITE_API_BASE_URL=https://api.heartguard.cn/api/v1
 ```
 

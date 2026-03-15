@@ -71,7 +71,7 @@
 
 建议在服务器的 `backend/.env` 中至少配置：
 
-```env
+```dotenv
 SECRET_KEY=请替换成强随机字符串
 DEBUG=false
 ALLOWED_HOSTS=127.0.0.1,localhost,heartguard.cn,console.heartguard.cn,api.heartguard.cn
@@ -127,7 +127,7 @@ cd /srv/heartguard/backend
 
 在 `console` 目录中创建生产环境变量：
 
-```env
+```dotenv
 VITE_API_BASE_URL=https://api.heartguard.cn/api/v1
 ```
 
@@ -219,6 +219,12 @@ server {
 
     client_max_body_size 20m;
 
+    location /docs/ {
+        alias /srv/heartguard/document-dist/;
+        index index.html;
+        try_files $uri $uri/ /docs/index.html;
+    }
+
     location / {
         proxy_pass http://127.0.0.1:8000;
         proxy_set_header Host $host;
@@ -229,6 +235,12 @@ server {
     }
 }
 ```
+
+说明：
+
+- `/docs/` 用来挂 VitePress 静态文档站
+- `/` 继续反向代理 Django API
+- 当前文档站已按 `/docs/` 作为基础路径构建
 
 ## HTTPS 证书建议
 
