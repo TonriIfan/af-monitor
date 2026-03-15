@@ -23,9 +23,10 @@
           <el-table-column prop="unread_alert_count" label="未读告警" min-width="100" />
           <el-table-column label="角色" min-width="100">
             <template #default="{ row }">
-              <el-tag :type="row.is_staff ? 'danger' : 'info'">{{ row.is_staff ? '管理' : '普通' }}</el-tag>
+              <el-tag :type="row.role === 'admin' ? 'danger' : 'info'">{{ row.role === 'admin' ? '管理' : '普通' }}</el-tag>
             </template>
           </el-table-column>
+          <el-table-column prop="last_login_ip" label="登录 IP" min-width="140" />
           <el-table-column label="最近活动" min-width="180">
             <template #default="{ row }">{{ formatDateTime(row.latest_activity_at) }}</template>
           </el-table-column>
@@ -61,8 +62,11 @@
           <el-form-item label="姓">
             <el-input v-model="form.last_name" />
           </el-form-item>
-          <el-form-item>
-            <el-checkbox v-model="form.is_staff">创建为管理员</el-checkbox>
+          <el-form-item label="角色">
+            <el-select v-model="form.role">
+              <el-option label="普通用户" value="user" />
+              <el-option label="管理员" value="admin" />
+            </el-select>
           </el-form-item>
           <el-button type="primary" :loading="submitting" @click="submitCreate">创建账号</el-button>
         </el-form>
@@ -89,7 +93,7 @@ const form = reactive({
   email: '',
   first_name: '',
   last_name: '',
-  is_staff: false,
+  role: 'user',
   is_active: true,
 })
 
@@ -121,7 +125,7 @@ async function submitCreate() {
       email: '',
       first_name: '',
       last_name: '',
-      is_staff: false,
+      role: 'user',
       is_active: true,
     })
   } catch (error: any) {

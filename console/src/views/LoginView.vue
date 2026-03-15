@@ -49,6 +49,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 
 import { useAuthStore } from '../stores/auth'
+import { fetchLoginContext } from '../utils/loginContext'
 
 const router = useRouter()
 const route = useRoute()
@@ -67,7 +68,8 @@ async function handleLogin() {
   }
   loading.value = true
   try {
-    await auth.login(form.username, form.password)
+    const loginContext = await fetchLoginContext()
+    await auth.login(form.username, form.password, loginContext)
     ElMessage.success('登录成功。')
     router.push((route.query.redirect as string) || '/dashboard')
   } catch (error: any) {

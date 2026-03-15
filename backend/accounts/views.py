@@ -6,9 +6,17 @@ from rest_framework.authtoken.views import ObtainAuthToken
 from rest_framework.generics import ListCreateAPIView
 from rest_framework.response import Response
 
+from .location import apply_login_location, build_login_location_payload
 from .serializers import LoginSerializer, UserCreateSerializer, UserSummarySerializer
 
 User = get_user_model()
+
+
+def resolve_client_ip(request):
+    forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+    if forwarded_for:
+        return forwarded_for.split(',')[0].strip()
+    return request.META.get('REMOTE_ADDR')
 
 
 class LoginView(ObtainAuthToken):
@@ -22,6 +30,11 @@ class LoginView(ObtainAuthToken):
         )
         serializer.is_valid(raise_exception=True)
         user = serializer.validated_data['user']
+        apply_login_location(
+            user,
+            resolve_client_ip(request),
+            serializer.validated_data.get('login_context'),
+        )
         token, _ = Token.objects.get_or_create(user=user)
         return Response(
             {
@@ -32,8 +45,52 @@ class LoginView(ObtainAuthToken):
                     'email': user.email,
                     'first_name': user.first_name,
                     'last_name': user.last_name,
+                    'role': user.role,
                     'is_staff': user.is_staff,
                     'is_superuser': user.is_superuser,
+                    'last_login_ip': user.last_login_ip,
+                    'last_login_location': build_login_location_payload(user),
+                },
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class ConsoleLoginView(LoginView):
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.serializer_class(
+            data=request.data,
+            context={'request': request},
+        )
+        serializer.is_valid(raise_exception=True)
+        user = serializer.validated_data['user']
+        if not user.is_console_admin:
+            return Response(
+                {'detail': '只有管理员账号可以登录控制台。'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        apply_login_location(
+            user,
+            resolve_client_ip(request),
+            serializer.validated_data.get('login_context'),
+        )
+        token, _ = Token.objects.get_or_create(user=user)
+        return Response(
+            {
+                'token': token.key,
+                'user': {
+                    'id': user.id,
+                    'username': user.username,
+                    'email': user.email,
+                    'first_name': user.first_name,
+                    'last_name': user.last_name,
+                    'role': user.role,
+                    'is_staff': user.is_staff,
+                    'is_superuser': user.is_superuser,
+                    'last_login_ip': user.last_login_ip,
+                    'last_login_location': build_login_location_payload(user),
                 },
             },
             status=status.HTTP_200_OK,

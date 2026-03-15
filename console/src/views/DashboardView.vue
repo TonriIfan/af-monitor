@@ -21,6 +21,29 @@
     </section>
 
     <section class="content-columns">
+      <article class="panel" v-if="auth.user?.role === 'admin'">
+        <div class="panel__header">
+          <div>
+            <p class="section-eyebrow">Account overview</p>
+            <h3>账号总览</h3>
+          </div>
+        </div>
+        <p class="panel__helper">地图会根据最近登录 IP 的地理信息落点，统计用户在全国范围内的分布。</p>
+        <div class="account-overview-layout">
+          <ChinaLoginMap :users="overview.user_summaries" />
+          <div class="account-overview-table">
+            <el-table :data="provinceDistribution" stripe>
+              <el-table-column prop="province" label="省级行政区" min-width="160" />
+              <el-table-column prop="user_count" label="用户数" min-width="90" />
+              <el-table-column prop="admin_count" label="管理员" min-width="90" />
+              <el-table-column prop="device_count" label="设备数" min-width="90" />
+              <el-table-column prop="measurement_count" label="测量数" min-width="100" />
+              <el-table-column prop="unread_alert_count" label="未读告警" min-width="100" />
+            </el-table>
+          </div>
+        </div>
+      </article>
+
       <article class="panel">
         <div class="panel__header">
           <div>
@@ -92,10 +115,11 @@
 import { computed, onMounted, reactive, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 
+import ChinaLoginMap from '../components/ChinaLoginMap.vue'
 import RiskBar from '../components/RiskBar.vue'
 import StatCard from '../components/StatCard.vue'
 import { useAuthStore } from '../stores/auth'
-import { useManagementStore } from '../stores/management'
+import { type ManagedUser, useManagementStore } from '../stores/management'
 import { api } from '../utils/api'
 import { formatDateTime, riskLabel, riskTagType } from '../utils/format'
 
@@ -108,6 +132,7 @@ const overview = reactive({
     alerts: 0,
     unread_alerts: 0,
   },
+  user_summaries: [] as ManagedUser[],
   risk_distribution: [] as Array<{ risk_level: string; total: number }>,
   latest_measurements: [] as Array<Record<string, any>>,
   latest_alerts: [] as Array<Record<string, any>>,
@@ -117,13 +142,101 @@ const maxRiskTotal = computed(() =>
   overview.risk_distribution.reduce((max, item) => Math.max(max, item.total), 0),
 )
 
+const provinceAliases: Record<string, string> = {
+  Beijing: '北京市',
+  Tianjin: '天津市',
+  Shanghai: '上海市',
+  Chongqing: '重庆市',
+  Hebei: '河北省',
+  Shanxi: '山西省',
+  'Inner Mongolia': '内蒙古自治区',
+  Liaoning: '辽宁省',
+  Jilin: '吉林省',
+  Heilongjiang: '黑龙江省',
+  Jiangsu: '江苏省',
+  Zhejiang: '浙江省',
+  Anhui: '安徽省',
+  Fujian: '福建省',
+  Jiangxi: '江西省',
+  Shandong: '山东省',
+  Henan: '河南省',
+  Hubei: '湖北省',
+  Hunan: '湖南省',
+  Guangdong: '广东省',
+  Guangxi: '广西壮族自治区',
+  Hainan: '海南省',
+  Sichuan: '四川省',
+  Guizhou: '贵州省',
+  Yunnan: '云南省',
+  Xizang: '西藏自治区',
+  Tibet: '西藏自治区',
+  Shaanxi: '陕西省',
+  Gansu: '甘肃省',
+  Qinghai: '青海省',
+  Ningxia: '宁夏回族自治区',
+  Xinjiang: '新疆维吾尔自治区',
+  HongKong: '香港特别行政区',
+  'Hong Kong': '香港特别行政区',
+  Macau: '澳门特别行政区',
+  Taiwan: '台湾省',
+}
+
+function normalizeProvince(region?: string, country?: string) {
+  const raw = (region || '').trim()
+  if (!raw) {
+    return country === 'China' || country === '中国' ? '境内未识别' : '未解析'
+  }
+  if (provinceAliases[raw]) return provinceAliases[raw]
+  if (raw.endsWith('省') || raw.endsWith('市') || raw.endsWith('自治区') || raw.endsWith('特别行政区')) {
+    return raw
+  }
+  return raw
+}
+
+const provinceDistribution = computed(() => {
+  const grouped = new Map<
+    string,
+    {
+      province: string
+      user_count: number
+      admin_count: number
+      device_count: number
+      measurement_count: number
+      unread_alert_count: number
+    }
+  >()
+
+  for (const user of overview.user_summaries) {
+    const province = normalizeProvince(user.last_login_location?.region, user.last_login_location?.country)
+    const entry = grouped.get(province) || {
+      province,
+      user_count: 0,
+      admin_count: 0,
+      device_count: 0,
+      measurement_count: 0,
+      unread_alert_count: 0,
+    }
+    entry.user_count += 1
+    entry.admin_count += user.role === 'admin' ? 1 : 0
+    entry.device_count += user.device_count
+    entry.measurement_count += user.measurement_count
+    entry.unread_alert_count += user.unread_alert_count
+    grouped.set(province, entry)
+  }
+
+  return Array.from(grouped.values()).sort((a, b) => {
+    if (b.user_count !== a.user_count) return b.user_count - a.user_count
+    return a.province.localeCompare(b.province, 'zh-CN')
+  })
+})
+
 const scopeTitle = computed(() => {
-  if (!auth.user?.is_staff) return '当前账号总览'
+  if (auth.user?.role !== 'admin') return '当前账号总览'
   return management.selectedUser ? `正在查看 ${management.selectedUser.username} 的账号态势` : '正在查看全部账号态势'
 })
 
 const scopeDescription = computed(() => {
-  if (!auth.user?.is_staff) return '当前页只展示你自己的设备、测量和告警数据。'
+  if (auth.user?.role !== 'admin') return '当前页只展示你自己的设备、测量和告警数据。'
   return management.selectedUser
     ? '下方所有统计、最新测量和最新告警，都已经切换到该账号的上下文。'
     : '当前页展示所有账号汇总后的总体情况，适合管理员做全局巡检。'
@@ -132,7 +245,7 @@ const scopeDescription = computed(() => {
 async function loadOverview() {
   try {
     const { data } = await api.get('/dashboard/overview', {
-      params: auth.user?.is_staff ? management.scopeParams() : {},
+      params: auth.user?.role === 'admin' ? management.scopeParams() : {},
     })
     Object.assign(overview, data)
   } catch {

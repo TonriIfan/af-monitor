@@ -29,7 +29,7 @@
             <h3>设备清单</h3>
           </div>
         </div>
-        <p class="panel__helper" v-if="auth.user?.is_staff">
+        <p class="panel__helper" v-if="auth.user?.role === 'admin'">
           当前视角：{{ management.selectedUser ? `${management.selectedUser.username} 的设备` : '全部账号设备' }}
         </p>
         <div class="device-grid" v-if="devices.length">
@@ -40,7 +40,7 @@
             </div>
             <p>{{ device.device_id }}</p>
             <div class="device-tile__meta">
-              <span v-if="auth.user?.is_staff">所属账号：{{ device.owner_username || '--' }}</span>
+              <span v-if="auth.user?.role === 'admin'">所属账号：{{ device.owner_username || '--' }}</span>
               <span>别名：{{ device.alias || '--' }}</span>
               <span>未读告警：{{ device.unread_alerts }}</span>
               <span>最近测量：{{ formatDateTime(device.latest_measurement_at) }}</span>
@@ -75,7 +75,7 @@ const form = reactive({
 async function loadDevices() {
   try {
     const { data } = await api.get('/devices/', {
-      params: auth.user?.is_staff ? management.scopeParams() : {},
+      params: auth.user?.role === 'admin' ? management.scopeParams() : {},
     })
     devices.value = data
   } catch {
@@ -90,10 +90,10 @@ async function submitBind() {
   }
   submitting.value = true
   try {
-    await api.post('/devices/bind', {
-      ...form,
-      ...(auth.user?.is_staff ? management.scopeParams() : {}),
-    })
+      await api.post('/devices/bind', {
+        ...form,
+        ...(auth.user?.role === 'admin' ? management.scopeParams() : {}),
+      })
     ElMessage.success('设备绑定成功。')
     form.device_id = ''
     form.name = ''

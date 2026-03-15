@@ -106,6 +106,23 @@ class PacketIngestApiTests(APITestCase):
         self.assertEqual(response.data['latest_measurement']['parsed']['batteryLevel'], 100)
 
     def test_dashboard_overview_returns_counts(self):
+        self.user.last_login_ip = '1.1.1.1'
+        self.user.last_login_country = 'China'
+        self.user.last_login_region = 'Beijing'
+        self.user.last_login_city = 'Beijing'
+        self.user.last_login_latitude = 39.9042
+        self.user.last_login_longitude = 116.4074
+        self.user.save(
+            update_fields=[
+                'last_login_ip',
+                'last_login_country',
+                'last_login_region',
+                'last_login_city',
+                'last_login_latitude',
+                'last_login_longitude',
+            ]
+        )
+
         self.client.post(
             '/api/v1/packets',
             {
@@ -125,6 +142,7 @@ class PacketIngestApiTests(APITestCase):
         self.assertEqual(response.data['counts']['devices'], 1)
         self.assertEqual(response.data['counts']['measurements'], 1)
         self.assertGreaterEqual(response.data['counts']['alerts'], 1)
+        self.assertEqual(response.data['user_summaries'][0]['last_login_location']['city'], 'Beijing')
 
     def test_staff_can_scope_dashboard_by_user(self):
         other_user = get_user_model().objects.create_user(
@@ -148,6 +166,7 @@ class PacketIngestApiTests(APITestCase):
         admin = get_user_model().objects.create_user(
             username='manager',
             password='pass12345',
+            role=get_user_model().Role.ADMIN,
             is_staff=True,
             is_superuser=True,
         )

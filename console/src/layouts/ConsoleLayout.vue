@@ -8,7 +8,7 @@
       </div>
 
       <el-menu :default-active="route.path" class="console-nav" router>
-        <el-menu-item v-if="auth.user?.is_staff" index="/accounts">
+        <el-menu-item v-if="auth.user?.role === 'admin'" index="/accounts">
           <el-icon><User /></el-icon>
           <span>账号</span>
         </el-menu-item>
@@ -47,7 +47,7 @@
         </div>
         <div class="console-topbar__actions">
           <el-select
-            v-if="auth.user?.is_staff"
+            v-if="auth.user?.role === 'admin'"
             :model-value="management.selectedUserId"
             class="scope-select"
             clearable
@@ -102,7 +102,7 @@ function handleLogout() {
   router.push('/login')
 }
 
-if (auth.user?.is_staff) {
+if (auth.user?.role === 'admin') {
   management.loadUsers().catch(() => undefined)
 }
 

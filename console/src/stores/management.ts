@@ -9,9 +9,20 @@ export type ManagedUser = {
   email: string
   first_name: string
   last_name: string
+  role: 'admin' | 'user'
   is_active: boolean
   is_staff: boolean
   is_superuser: boolean
+  last_login_ip: string | null
+  last_login_location: {
+    country: string
+    region: string
+    city: string
+    latitude: number | null
+    longitude: number | null
+    label: string
+    resolved: boolean
+  }
   device_count: number
   measurement_count: number
   alert_count: number

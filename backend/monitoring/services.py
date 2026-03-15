@@ -8,11 +8,12 @@ from typing import Any
 
 from django.contrib.auth import get_user_model
 from django.db import transaction
-from django.db.models import Count
+from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
+from accounts.location import build_login_location_payload
 from devices.models import Device
 
 from .models import AlertEvent, AnalysisResult, Measurement, RawPacket, UploadSession
@@ -415,7 +416,7 @@ def get_device_status_payload(device: Device, user) -> dict[str, Any]:
 
 
 def scope_user_for_request(request):
-    if request.user.is_staff:
+    if getattr(request.user, 'role', None) == User.Role.ADMIN:
         requested_user_id = request.query_params.get('user_id') or request.data.get('user_id')
         if requested_user_id:
             return get_object_or_404(User, pk=requested_user_id)
@@ -448,6 +449,15 @@ def build_dashboard_overview(scope_user=None) -> dict[str, Any]:
     base_measurements = measurements_queryset_for_scope(scope_user)
     base_alerts = alerts_queryset_for_scope(scope_user)
     devices = devices_queryset_for_scope(scope_user)
+    user_queryset = (
+        User.objects.all()
+        if scope_user is None
+        else User.objects.filter(pk=scope_user.pk)
+    ).annotate(
+        device_count=Count('device_bindings__device', filter=Q(device_bindings__is_active=True), distinct=True),
+        measurement_count=Count('measurements', distinct=True),
+        unread_alert_count=Count('alerts', filter=Q(alerts__status='unread'), distinct=True),
+    ).order_by('-is_staff', 'username')
 
     risk_distribution = list(
         base_measurements.values('analysis_result__risk_level')
@@ -489,6 +499,19 @@ def build_dashboard_overview(scope_user=None) -> dict[str, Any]:
             'alerts': base_alerts.count(),
             'unread_alerts': base_alerts.filter(status=AlertEvent.STATUS_UNREAD).count(),
         },
+        'user_summaries': [
+            {
+                'id': item.id,
+                'username': item.username,
+                'role': item.role,
+                'last_login_ip': item.last_login_ip,
+                'last_login_location': build_login_location_payload(item),
+                'device_count': item.device_count,
+                'measurement_count': item.measurement_count,
+                'unread_alert_count': item.unread_alert_count,
+            }
+            for item in user_queryset
+        ],
         'risk_distribution': [
             {
                 'risk_level': item['analysis_result__risk_level'] or 'unknown',

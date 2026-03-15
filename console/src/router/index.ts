@@ -37,7 +37,7 @@ router.beforeEach((to) => {
   if (!auth.isAuthenticated) {
     return `/login?redirect=${encodeURIComponent(to.fullPath)}`
   }
-  if (to.path === '/accounts' && !auth.user?.is_staff) {
+  if (to.path === '/accounts' && auth.user?.role !== 'admin') {
     return '/dashboard'
   }
   return true

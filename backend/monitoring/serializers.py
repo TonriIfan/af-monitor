@@ -123,6 +123,7 @@ class DeviceStatusSerializer(serializers.Serializer):
 
 class DashboardOverviewSerializer(serializers.Serializer):
     counts = serializers.DictField()
+    user_summaries = serializers.ListField()
     risk_distribution = serializers.ListField()
     latest_measurements = serializers.ListField()
     latest_alerts = serializers.ListField()
