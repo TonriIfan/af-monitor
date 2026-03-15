@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from collections import defaultdict
 from dataclasses import dataclass
 from decimal import Decimal
 from hashlib import sha1
+from statistics import mean
 from typing import Any
 
 from django.contrib.auth import get_user_model
@@ -180,43 +182,161 @@ def _measurement_fields(parsed: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def analyze_measurement(measurement: Measurement) -> dict[str, Any]:
-    triggers: list[str] = []
-    labels: list[str] = []
+def _metric_samples(queryset, field_name: str, limit: int = 20) -> list[float]:
+    values = list(
+        queryset.exclude(**{f'{field_name}__isnull': True}).values_list(field_name, flat=True)[:limit]
+    )
+    samples: list[float] = []
+    for value in values:
+        try:
+            samples.append(float(value))
+        except (TypeError, ValueError):
+            continue
+    return samples
+
+
+def _history_queryset(measurement: Measurement):
+    queryset = Measurement.objects.filter(device=measurement.device).exclude(pk=measurement.pk)
+    if measurement.user_id:
+        queryset = queryset.filter(user_id=measurement.user_id)
+    return queryset.order_by('-measured_at')
+
+
+def _window_queryset(queryset, measurement: Measurement, minutes: int):
+    window_start = measurement.measured_at - timezone.timedelta(minutes=minutes)
+    return queryset.filter(measured_at__gte=window_start)
+
+
+def _build_realtime_flags(measurement: Measurement, worn: bool) -> tuple[list[str], Decimal]:
+    flags: list[str] = []
     score = Decimal('0.00')
-    worn = measurement.wear_status in {'佩戴', '采集中'} or measurement.oxygen_wear_status in {'佩戴', '采集中'}
 
     if measurement.heart_rate and worn and measurement.heart_rate > 110:
-        triggers.append('tachycardia')
-        score += Decimal('0.35')
+        flags.append('realtime_tachycardia')
+        score += Decimal('0.28')
     if measurement.heart_rate and worn and measurement.heart_rate < 50:
-        triggers.append('bradycardia')
-        score += Decimal('0.25')
+        flags.append('realtime_bradycardia')
+        score += Decimal('0.20')
     if measurement.hrv and measurement.hrv >= 35:
-        triggers.append('hrv_instability')
-        score += Decimal('0.20')
+        flags.append('realtime_hrv_instability')
+        score += Decimal('0.16')
     if measurement.stress and measurement.stress >= 80:
-        triggers.append('high_stress')
-        score += Decimal('0.10')
+        flags.append('realtime_high_stress')
+        score += Decimal('0.08')
     if measurement.oxygen and measurement.oxygen < 95:
-        triggers.append('low_oxygen')
-        score += Decimal('0.25')
-    if measurement.temperature and measurement.temperature >= Decimal('37.80'):
-        triggers.append('fever')
-        score += Decimal('0.10')
-    if measurement.body_temperature and measurement.body_temperature >= Decimal('37.80'):
-        triggers.append('fever')
-        score += Decimal('0.10')
-
-    if {'tachycardia', 'hrv_instability', 'low_oxygen'}.issubset(set(triggers)):
-        triggers.append('suspected_arrhythmia_cluster')
+        flags.append('realtime_low_oxygen')
         score += Decimal('0.20')
+
+    current_temp = measurement.temperature or measurement.body_temperature
+    if current_temp and current_temp >= Decimal('37.80'):
+        flags.append('realtime_fever')
+        score += Decimal('0.06')
+
+    if {'realtime_tachycardia', 'realtime_hrv_instability', 'realtime_low_oxygen'}.issubset(set(flags)):
+        flags.append('realtime_arrhythmia_cluster')
+        score += Decimal('0.14')
+
+    return flags, score
+
+
+def _build_window_flags(measurement: Measurement, history_queryset) -> tuple[list[str], Decimal, dict[str, Any]]:
+    flags: list[str] = []
+    score = Decimal('0.00')
+    recent_30m = _window_queryset(history_queryset, measurement, 30)
+    recent_24h = _window_queryset(history_queryset, measurement, 24 * 60)
+
+    hr_count = recent_30m.filter(heart_rate__gt=110).count()
+    oxygen_count = recent_30m.filter(oxygen__lt=95).count()
+    hrv_count = recent_30m.filter(hrv__gte=35).count()
+    alert_count = recent_24h.filter(analysis_result__should_alert=True).count()
+
+    if measurement.heart_rate and measurement.heart_rate > 110:
+        hr_count += 1
+    if measurement.oxygen and measurement.oxygen < 95:
+        oxygen_count += 1
+    if measurement.hrv and measurement.hrv >= 35:
+        hrv_count += 1
+
+    if hr_count >= 3:
+        flags.append('window_repeated_tachycardia_30m')
+        score += Decimal('0.16')
+    if oxygen_count >= 2:
+        flags.append('window_repeated_low_oxygen_30m')
+        score += Decimal('0.14')
+    if hrv_count >= 3:
+        flags.append('window_repeated_hrv_instability_30m')
+        score += Decimal('0.10')
+    if alert_count >= 2:
+        flags.append('window_repeated_high_risk_24h')
+        score += Decimal('0.12')
+
+    window_stats = {
+        'tachycardia_count_30m': hr_count,
+        'low_oxygen_count_30m': oxygen_count,
+        'hrv_instability_count_30m': hrv_count,
+        'high_risk_count_24h': alert_count,
+    }
+    return flags, score, window_stats
+
+
+def _build_baseline_flags(measurement: Measurement, history_queryset) -> tuple[list[str], Decimal, dict[str, Any]]:
+    flags: list[str] = []
+    score = Decimal('0.00')
+    baseline_queryset = history_queryset.filter(measured_at__gte=measurement.measured_at - timezone.timedelta(days=7))
+
+    baseline_heart_rate = _metric_samples(baseline_queryset, 'heart_rate')
+    baseline_hrv = _metric_samples(baseline_queryset, 'hrv')
+    baseline_oxygen = _metric_samples(baseline_queryset, 'oxygen')
+    baseline_temperature = _metric_samples(baseline_queryset, 'temperature')
+
+    baselines = {
+        'heart_rate': round(mean(baseline_heart_rate), 2) if baseline_heart_rate else None,
+        'hrv': round(mean(baseline_hrv), 2) if baseline_hrv else None,
+        'oxygen': round(mean(baseline_oxygen), 2) if baseline_oxygen else None,
+        'temperature': round(mean(baseline_temperature), 2) if baseline_temperature else None,
+    }
+
+    if baselines['heart_rate'] is not None and measurement.heart_rate:
+        if float(measurement.heart_rate) - baselines['heart_rate'] >= 15:
+            flags.append('baseline_heart_rate_above_personal_baseline')
+            score += Decimal('0.12')
+    if baselines['oxygen'] is not None and measurement.oxygen:
+        if baselines['oxygen'] - float(measurement.oxygen) >= 3:
+            flags.append('baseline_oxygen_below_personal_baseline')
+            score += Decimal('0.12')
+    if baselines['hrv'] is not None and measurement.hrv:
+        if float(measurement.hrv) - baselines['hrv'] >= 10:
+            flags.append('baseline_hrv_above_personal_baseline')
+            score += Decimal('0.08')
+
+    current_temp = measurement.temperature or measurement.body_temperature
+    if baselines['temperature'] is not None and current_temp:
+        if float(current_temp) - baselines['temperature'] >= 0.5:
+            flags.append('baseline_temperature_above_personal_baseline')
+            score += Decimal('0.05')
+
+    return flags, score, baselines
+
+
+def analyze_measurement(measurement: Measurement) -> dict[str, Any]:
+    labels: list[str] = []
+    worn = measurement.wear_status in {'佩戴', '采集中'} or measurement.oxygen_wear_status in {'佩戴', '采集中'}
+    history_queryset = _history_queryset(measurement)
+    realtime_flags, realtime_score = _build_realtime_flags(measurement, worn)
+    window_flags, window_score, window_stats = _build_window_flags(measurement, history_queryset)
+    baseline_flags, baseline_score, baselines = _build_baseline_flags(measurement, history_queryset)
+
+    triggers = realtime_flags + window_flags + baseline_flags
+    score = realtime_score + window_score + baseline_score
+    if not worn:
+        triggers.append('context_unstable_wear_state')
+        score = max(Decimal('0.00'), score - Decimal('0.10'))
 
     score = min(score, Decimal('0.99'))
     if score >= Decimal('0.80'):
         risk_level = AlertEvent.LEVEL_CRITICAL
         labels.append('高危异常心律风险')
-    elif score >= Decimal('0.55'):
+    elif score >= Decimal('0.50'):
         risk_level = AlertEvent.LEVEL_HIGH
         labels.append('较高异常心律风险')
     elif score >= Decimal('0.30'):
@@ -226,19 +346,42 @@ def analyze_measurement(measurement: Measurement) -> dict[str, Any]:
         risk_level = AlertEvent.LEVEL_LOW
         labels.append('低风险')
 
+    if window_flags:
+        labels.append('存在连续时间窗异常')
+    if baseline_flags:
+        labels.append('存在个人基线偏移')
+    if not worn:
+        labels.append('佩戴状态不稳定，结果需谨慎解释')
+
     should_alert = risk_level in {AlertEvent.LEVEL_HIGH, AlertEvent.LEVEL_CRITICAL}
-    summary = '未发现明显异常。'
+    summary_parts = []
+    if realtime_flags:
+        summary_parts.append(f'实时异常: {", ".join(realtime_flags)}')
+    if window_flags:
+        summary_parts.append(f'时间窗异常: {", ".join(window_flags)}')
+    if baseline_flags:
+        summary_parts.append(f'基线偏移: {", ".join(baseline_flags)}')
+    if not summary_parts:
+        summary_parts.append('未发现明显异常。')
     if triggers:
-        summary = f"命中规则: {', '.join(triggers)}。"
+        summary_parts.append(f'综合命中: {", ".join(triggers)}')
 
     return {
-        'algorithm_version': 'rules-v1',
+        'algorithm_version': 'rules-window-baseline-v2',
         'risk_level': risk_level,
         'risk_score': score.quantize(Decimal('0.01')),
         'labels': labels,
         'triggers': triggers,
-        'summary': summary,
+        'summary': '；'.join(summary_parts),
         'should_alert': should_alert,
+        'details': {
+            'realtime_flags': realtime_flags,
+            'window_flags': window_flags,
+            'baseline_flags': baseline_flags,
+            'window_stats': window_stats,
+            'baselines': baselines,
+            'wearing_effective': worn,
+        },
     }
 
 
@@ -527,4 +670,82 @@ def build_dashboard_overview(scope_user=None) -> dict[str, Any]:
         ],
         'latest_measurements': latest_measurements,
         'latest_alerts': latest_alerts,
+    }
+
+
+def _trend_bucket_template(label: str) -> dict[str, Any]:
+    return {
+        'label': label,
+        'measurement_count': 0,
+        'high_risk_count': 0,
+        'alert_count': 0,
+        'heart_rate_values': [],
+        'oxygen_values': [],
+    }
+
+
+def _finalize_trend_bucket(bucket: dict[str, Any]) -> dict[str, Any]:
+    heart_rate_values = bucket.pop('heart_rate_values')
+    oxygen_values = bucket.pop('oxygen_values')
+    bucket['avg_heart_rate'] = round(mean(heart_rate_values), 2) if heart_rate_values else None
+    bucket['avg_oxygen'] = round(mean(oxygen_values), 2) if oxygen_values else None
+    return bucket
+
+
+def build_measurement_trends(scope_user=None) -> dict[str, Any]:
+    queryset = (
+        measurements_queryset_for_scope(scope_user)
+        .select_related('analysis_result')
+        .filter(measured_at__gte=timezone.now() - timezone.timedelta(days=56))
+    )
+    alerts = alerts_queryset_for_scope(scope_user).filter(created_at__gte=timezone.now() - timezone.timedelta(days=56))
+
+    daily_buckets: dict[str, dict[str, Any]] = {}
+    weekly_buckets: dict[str, dict[str, Any]] = {}
+
+    for day_offset in range(6, -1, -1):
+        day = (timezone.localtime(timezone.now()) - timezone.timedelta(days=day_offset)).date()
+        label = day.isoformat()
+        daily_buckets[label] = _trend_bucket_template(label)
+
+    for week_offset in range(7, -1, -1):
+        day = (timezone.localtime(timezone.now()) - timezone.timedelta(days=7 * week_offset)).date()
+        week_start = day - timezone.timedelta(days=day.weekday())
+        label = week_start.isoformat()
+        weekly_buckets[label] = _trend_bucket_template(label)
+
+    for item in queryset:
+        local_dt = timezone.localtime(item.measured_at)
+        day_label = local_dt.date().isoformat()
+        week_start = (local_dt.date() - timezone.timedelta(days=local_dt.date().weekday())).isoformat()
+
+        for bucket_map, key in [(daily_buckets, day_label), (weekly_buckets, week_start)]:
+            if key not in bucket_map:
+                continue
+            bucket = bucket_map[key]
+            bucket['measurement_count'] += 1
+            if getattr(item.analysis_result, 'risk_level', '') in {AlertEvent.LEVEL_HIGH, AlertEvent.LEVEL_CRITICAL}:
+                bucket['high_risk_count'] += 1
+            if item.heart_rate is not None:
+                bucket['heart_rate_values'].append(float(item.heart_rate))
+            if item.oxygen is not None:
+                bucket['oxygen_values'].append(float(item.oxygen))
+
+    alert_day_counts = defaultdict(int)
+    alert_week_counts = defaultdict(int)
+    for alert in alerts:
+        local_dt = timezone.localtime(alert.created_at)
+        alert_day_counts[local_dt.date().isoformat()] += 1
+        alert_week_counts[(local_dt.date() - timezone.timedelta(days=local_dt.date().weekday())).isoformat()] += 1
+
+    for label, count in alert_day_counts.items():
+        if label in daily_buckets:
+            daily_buckets[label]['alert_count'] = count
+    for label, count in alert_week_counts.items():
+        if label in weekly_buckets:
+            weekly_buckets[label]['alert_count'] = count
+
+    return {
+        'daily': [_finalize_trend_bucket(bucket) for _, bucket in sorted(daily_buckets.items())],
+        'weekly': [_finalize_trend_bucket(bucket) for _, bucket in sorted(weekly_buckets.items())],
     }

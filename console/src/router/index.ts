@@ -17,6 +17,7 @@ const router = createRouter({
       children: [
         { path: '', redirect: '/measurements' },
         { path: 'accounts', name: 'accounts', component: () => import('../views/AccountsView.vue') },
+        { path: 'ai-settings', name: 'ai-settings', component: () => import('../views/AiSettingsView.vue') },
         { path: 'dashboard', name: 'dashboard', component: () => import('../views/DashboardView.vue') },
         { path: 'devices', name: 'devices', component: () => import('../views/DevicesView.vue') },
         { path: 'measurements', name: 'measurements', component: () => import('../views/MeasurementsView.vue') },
@@ -38,6 +39,9 @@ router.beforeEach((to) => {
     return `/login?redirect=${encodeURIComponent(to.fullPath)}`
   }
   if (to.path === '/dashboard' && auth.user?.role !== 'admin') {
+    return '/measurements'
+  }
+  if (to.path === '/ai-settings' && auth.user?.role !== 'admin') {
     return '/measurements'
   }
   if (to.path === '/accounts' && auth.user?.role !== 'admin') {

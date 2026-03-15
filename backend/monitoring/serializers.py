@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from .models import AlertEvent, Measurement
+from .models import AiSettings, AlertEvent, Measurement
 
 
 class PacketIngestSerializer(serializers.Serializer):
@@ -51,6 +51,7 @@ class MeasurementSerializer(serializers.ModelSerializer):
             'risk_score': float(result.risk_score),
             'labels': result.labels,
             'triggers': result.triggers,
+            'details': result.details,
             'summary': result.summary,
             'should_alert': result.should_alert,
         }
@@ -127,3 +128,49 @@ class DashboardOverviewSerializer(serializers.Serializer):
     risk_distribution = serializers.ListField()
     latest_measurements = serializers.ListField()
     latest_alerts = serializers.ListField()
+
+
+class MeasurementTrendSerializer(serializers.Serializer):
+    daily = serializers.ListField()
+    weekly = serializers.ListField()
+
+
+class AiSettingsSerializer(serializers.ModelSerializer):
+    api_key = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    has_api_key = serializers.SerializerMethodField()
+    api_key_masked = serializers.SerializerMethodField()
+
+    class Meta:
+        model = AiSettings
+        fields = [
+            'enabled',
+            'mode',
+            'api_base_url',
+            'api_key',
+            'api_key_masked',
+            'has_api_key',
+            'model',
+            'temperature',
+            'system_prompt',
+            'updated_at',
+        ]
+        read_only_fields = ['updated_at', 'api_key_masked', 'has_api_key']
+
+    def get_has_api_key(self, obj):
+        return bool(obj.api_key)
+
+    def get_api_key_masked(self, obj):
+        if not obj.api_key:
+            return ''
+        if len(obj.api_key) <= 8:
+            return '*' * len(obj.api_key)
+        return f'{obj.api_key[:4]}{"*" * (len(obj.api_key) - 8)}{obj.api_key[-4:]}'
+
+    def update(self, instance, validated_data):
+        api_key = validated_data.pop('api_key', None)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        if api_key is not None:
+            instance.api_key = api_key
+        instance.save()
+        return instance

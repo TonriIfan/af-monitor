@@ -12,6 +12,10 @@
           <el-icon><User /></el-icon>
           <span>账号</span>
         </el-menu-item>
+        <el-menu-item v-if="auth.user?.role === 'admin'" index="/ai-settings">
+          <el-icon><Bell /></el-icon>
+          <span>AI 设置</span>
+        </el-menu-item>
         <el-menu-item v-if="auth.user?.role === 'admin'" index="/dashboard">
           <el-icon><DataBoard /></el-icon>
           <span>总览</span>
@@ -90,6 +94,7 @@ const title = computed(() => {
   const map: Record<string, string> = {
     '/dashboard': '监测总览',
     '/accounts': '账号管理',
+    '/ai-settings': 'AI 设置',
     '/devices': '设备编排',
     '/measurements': '测量明细',
     '/alerts': '告警中心',

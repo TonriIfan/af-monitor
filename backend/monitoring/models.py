@@ -139,6 +139,7 @@ class AnalysisResult(models.Model):
     risk_score = models.DecimalField(max_digits=4, decimal_places=2, default=0)
     labels = models.JSONField(default=list, blank=True)
     triggers = models.JSONField(default=list, blank=True)
+    details = models.JSONField(default=dict, blank=True)
     summary = models.TextField(blank=True)
     should_alert = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -200,4 +201,29 @@ class AlertEvent(models.Model):
     class Meta:
         ordering = ['-created_at']
 
-# Create your models here.
+
+class AiSettings(models.Model):
+    MODE_DISABLED = 'disabled'
+    MODE_TEMPLATE = 'template'
+    MODE_OPENAI_COMPATIBLE = 'openai_compatible'
+    MODE_CHOICES = [
+        (MODE_DISABLED, 'disabled'),
+        (MODE_TEMPLATE, 'template'),
+        (MODE_OPENAI_COMPATIBLE, 'openai_compatible'),
+    ]
+
+    singleton_key = models.CharField(max_length=32, unique=True, default='default')
+    enabled = models.BooleanField(default=False)
+    mode = models.CharField(max_length=32, choices=MODE_CHOICES, default=MODE_TEMPLATE)
+    api_base_url = models.URLField(blank=True)
+    api_key = models.CharField(max_length=255, blank=True)
+    model = models.CharField(max_length=128, default='gpt-4o-mini')
+    temperature = models.DecimalField(max_digits=3, decimal_places=2, default=0.20)
+    system_prompt = models.TextField(blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-updated_at']
+
+    def __str__(self):
+        return f'AI Settings ({self.mode})'

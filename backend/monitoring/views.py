@@ -6,17 +6,22 @@ from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import AlertEvent, Measurement
+from .llm import build_measurement_llm_context, request_llm_insight
+from .llm import get_ai_settings
+from .models import AiSettings, AlertEvent, Measurement
 from .serializers import (
     AlertSerializer,
     AlertStateUpdateSerializer,
+    AiSettingsSerializer,
     DashboardOverviewSerializer,
+    MeasurementTrendSerializer,
     MeasurementSerializer,
     PacketIngestSerializer,
 )
 from .services import (
     alerts_queryset_for_scope,
     build_dashboard_overview,
+    build_measurement_trends,
     ingest_packet,
     measurements_queryset_for_scope,
     scope_user_for_request,
@@ -121,3 +126,41 @@ class DashboardOverviewView(APIView):
         payload = build_dashboard_overview(scope_user_for_request(request))
         serializer = DashboardOverviewSerializer(payload)
         return Response(serializer.data)
+
+
+class MeasurementTrendView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        payload = build_measurement_trends(scope_user_for_request(request))
+        serializer = MeasurementTrendSerializer(payload)
+        return Response(serializer.data)
+
+
+class MeasurementLlmInsightView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, measurement_id):
+        scope_user = scope_user_for_request(request)
+        measurement = get_object_or_404(
+            measurements_queryset_for_scope(scope_user).select_related('analysis_result', 'device', 'user'),
+            id=measurement_id,
+        )
+        context = build_measurement_llm_context(measurement, measurement.analysis_result)
+        payload = request_llm_insight(context)
+        return Response(payload, status=status.HTTP_200_OK)
+
+
+class AiSettingsView(APIView):
+    permission_classes = [permissions.IsAdminUser]
+
+    def get(self, request):
+        serializer = AiSettingsSerializer(get_ai_settings())
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def put(self, request):
+        settings_obj = get_ai_settings()
+        serializer = AiSettingsSerializer(instance=settings_obj, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(AiSettingsSerializer(settings_obj).data, status=status.HTTP_200_OK)
