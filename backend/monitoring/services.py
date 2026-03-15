@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 from decimal import Decimal
 from hashlib import sha1
@@ -748,4 +748,212 @@ def build_measurement_trends(scope_user=None) -> dict[str, Any]:
     return {
         'daily': [_finalize_trend_bucket(bucket) for _, bucket in sorted(daily_buckets.items())],
         'weekly': [_finalize_trend_bucket(bucket) for _, bucket in sorted(weekly_buckets.items())],
+    }
+
+
+def _risk_rank(level: str | None) -> int:
+    order = {
+        AlertEvent.LEVEL_LOW: 1,
+        AlertEvent.LEVEL_MODERATE: 2,
+        AlertEvent.LEVEL_HIGH: 3,
+        AlertEvent.LEVEL_CRITICAL: 4,
+    }
+    return order.get(level or '', 0)
+
+
+def _safe_avg(values: list[float]) -> float | None:
+    return round(mean(values), 2) if values else None
+
+
+def build_home_summary(user) -> dict[str, Any]:
+    latest_measurement = measurements_queryset_for_scope(user).first()
+    unread_alerts = alerts_queryset_for_scope(user).filter(status=AlertEvent.STATUS_UNREAD)
+    current_device = devices_queryset_for_scope(user).first()
+    trends = build_measurement_trends(user)
+
+    current_device_payload = None
+    if current_device:
+        current_device_payload = get_device_status_payload(current_device, user)
+
+    return {
+        'user': {
+            'id': user.id,
+            'username': user.username,
+            'role': user.role,
+        },
+        'counts': {
+            'devices': devices_queryset_for_scope(user).count(),
+            'measurements': measurements_queryset_for_scope(user).count(),
+            'alerts': alerts_queryset_for_scope(user).count(),
+            'unread_alerts': unread_alerts.count(),
+        },
+        'current_device': current_device_payload,
+        'latest_measurement': None
+        if latest_measurement is None
+        else {
+            'id': latest_measurement.id,
+            'device_id': latest_measurement.device.device_id,
+            'measured_at': latest_measurement.measured_at,
+            'packet_kind': latest_measurement.packet_kind,
+            'parsed': latest_measurement.parsed,
+            'analysis': None
+            if not hasattr(latest_measurement, 'analysis_result')
+            else {
+                'risk_level': latest_measurement.analysis_result.risk_level,
+                'risk_score': float(latest_measurement.analysis_result.risk_score),
+                'summary': latest_measurement.analysis_result.summary,
+                'triggers': latest_measurement.analysis_result.triggers,
+            },
+        },
+        'latest_alert': None
+        if not unread_alerts.exists()
+        else {
+            'id': unread_alerts.first().id,
+            'level': unread_alerts.first().level,
+            'title': unread_alerts.first().title,
+            'message': unread_alerts.first().message,
+            'created_at': unread_alerts.first().created_at,
+        },
+        'trend_preview': trends['daily'],
+    }
+
+
+def build_measurement_chart(scope_user, metric: str, range_key: str = '7d') -> dict[str, Any]:
+    metric_field_map = {
+        'heart_rate': 'heart_rate',
+        'oxygen': 'oxygen',
+        'temperature': 'temperature',
+    }
+    if metric not in metric_field_map:
+        raise ValueError('不支持的图表指标。')
+    days_map = {'7d': 7, '30d': 30}
+    days = days_map.get(range_key)
+    if not days:
+        raise ValueError('不支持的时间范围。')
+
+    field_name = metric_field_map[metric]
+    queryset = (
+        measurements_queryset_for_scope(scope_user)
+        .filter(measured_at__gte=timezone.now() - timezone.timedelta(days=days))
+        .exclude(**{f'{field_name}__isnull': True})
+        .order_by('measured_at')
+    )
+
+    points = []
+    values: list[float] = []
+    for item in queryset:
+        raw_value = getattr(item, field_name)
+        numeric = float(raw_value)
+        values.append(numeric)
+        points.append(
+            {
+                'measurement_id': item.id,
+                'measured_at': item.measured_at,
+                'value': numeric,
+                'device_id': item.device.device_id,
+            }
+        )
+
+    return {
+        'metric': metric,
+        'range': range_key,
+        'points': points,
+        'summary': {
+            'count': len(points),
+            'avg': _safe_avg(values),
+            'min': min(values) if values else None,
+            'max': max(values) if values else None,
+        },
+    }
+
+
+def build_analysis_latest(scope_user) -> dict[str, Any] | None:
+    latest = (
+        measurements_queryset_for_scope(scope_user)
+        .select_related('analysis_result', 'device', 'user')
+        .filter(analysis_result__isnull=False)
+        .first()
+    )
+    if latest is None or not hasattr(latest, 'analysis_result'):
+        return None
+    result = latest.analysis_result
+    return {
+        'measurement_id': latest.id,
+        'device_id': latest.device.device_id,
+        'measured_at': latest.measured_at,
+        'username': latest.user.username if latest.user else '',
+        'parsed': latest.parsed,
+        'analysis': {
+            'algorithm_version': result.algorithm_version,
+            'risk_level': result.risk_level,
+            'risk_score': float(result.risk_score),
+            'labels': result.labels,
+            'triggers': result.triggers,
+            'details': result.details,
+            'summary': result.summary,
+            'should_alert': result.should_alert,
+        },
+    }
+
+
+def build_analysis_history(scope_user, limit: int = 20) -> list[dict[str, Any]]:
+    queryset = (
+        measurements_queryset_for_scope(scope_user)
+        .select_related('analysis_result', 'device', 'user')
+        .filter(analysis_result__isnull=False)[:limit]
+    )
+    items = []
+    for measurement in queryset:
+        result = measurement.analysis_result
+        items.append(
+            {
+                'measurement_id': measurement.id,
+                'device_id': measurement.device.device_id,
+                'measured_at': measurement.measured_at,
+                'packet_kind': measurement.packet_kind,
+                'risk_level': result.risk_level,
+                'risk_score': float(result.risk_score),
+                'summary': result.summary,
+                'triggers': result.triggers,
+            }
+        )
+    return items
+
+
+def build_period_report(scope_user, days: int) -> dict[str, Any]:
+    start_at = timezone.now() - timezone.timedelta(days=days)
+    measurements = list(
+        measurements_queryset_for_scope(scope_user)
+        .select_related('analysis_result')
+        .filter(measured_at__gte=start_at)
+    )
+    alerts = list(alerts_queryset_for_scope(scope_user).filter(created_at__gte=start_at))
+
+    heart_rates = [float(item.heart_rate) for item in measurements if item.heart_rate is not None]
+    oxygen_values = [float(item.oxygen) for item in measurements if item.oxygen is not None]
+    risk_levels = [item.analysis_result.risk_level for item in measurements if hasattr(item, 'analysis_result')]
+    trigger_counter = Counter()
+    for item in measurements:
+        if hasattr(item, 'analysis_result'):
+            trigger_counter.update(item.analysis_result.triggers)
+
+    peak_risk = 'low'
+    for level in risk_levels:
+        if _risk_rank(level) > _risk_rank(peak_risk):
+            peak_risk = level
+
+    return {
+        'period_days': days,
+        'start_at': start_at,
+        'end_at': timezone.now(),
+        'measurement_count': len(measurements),
+        'alert_count': len(alerts),
+        'peak_risk_level': peak_risk,
+        'avg_heart_rate': _safe_avg(heart_rates),
+        'avg_oxygen': _safe_avg(oxygen_values),
+        'top_triggers': [{'code': code, 'count': count} for code, count in trigger_counter.most_common(5)],
+        'summary': (
+            f'最近 {days} 天共记录 {len(measurements)} 条测量，'
+            f'产生 {len(alerts)} 条告警，最高风险等级为 {peak_risk}。'
+        ),
     }

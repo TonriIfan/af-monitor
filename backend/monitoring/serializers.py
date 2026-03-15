@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from .models import AiSettings, AlertEvent, Measurement
+from .models import AiSettings, AlertEvent, Measurement, PushDeviceRegistration, SymptomFeedback
 
 
 class PacketIngestSerializer(serializers.Serializer):
@@ -174,3 +174,38 @@ class AiSettingsSerializer(serializers.ModelSerializer):
             instance.api_key = api_key
         instance.save()
         return instance
+
+
+class MeasurementBatchIngestSerializer(serializers.Serializer):
+    items = serializers.ListField(child=PacketIngestSerializer(), allow_empty=False)
+
+
+class SymptomFeedbackSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SymptomFeedback
+        fields = [
+            'id',
+            'symptoms',
+            'severity',
+            'duration_minutes',
+            'notes',
+            'occurred_at',
+            'created_at',
+        ]
+        read_only_fields = ['id', 'created_at']
+
+
+class PushDeviceRegistrationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PushDeviceRegistration
+        fields = [
+            'id',
+            'device_token',
+            'platform',
+            'app_version',
+            'device_name',
+            'is_active',
+            'last_seen_at',
+            'created_at',
+        ]
+        read_only_fields = ['id', 'last_seen_at', 'created_at']

@@ -4,13 +4,16 @@ from rest_framework import permissions, status
 from rest_framework.authtoken.models import Token
 from rest_framework.authtoken.views import ObtainAuthToken
 from rest_framework.generics import ListCreateAPIView
+from rest_framework.generics import RetrieveUpdateAPIView
 from rest_framework.views import APIView
 from rest_framework.generics import DestroyAPIView
 from rest_framework.response import Response
 
 from .location import apply_login_location, build_login_location_payload
+from .models import PatientProfile
 from .serializers import (
     LoginSerializer,
+    PatientProfileSerializer,
     RegisterSerializer,
     UserBatchCreateSerializer,
     UserBatchDeleteSerializer,
@@ -99,6 +102,40 @@ class RegisterView(APIView):
         user = serializer.save()
         token, _ = Token.objects.get_or_create(user=user)
         return Response(build_auth_payload(user, token.key), status=status.HTTP_201_CREATED)
+
+
+class MeView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        token = Token.objects.filter(user=request.user).first()
+        return Response(build_auth_payload(request.user, token.key if token else ''), status=status.HTTP_200_OK)
+
+
+class LogoutView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        Token.objects.filter(user=request.user).delete()
+        return Response({'logged_out': True}, status=status.HTTP_200_OK)
+
+
+class ProfileView(RetrieveUpdateAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = PatientProfileSerializer
+
+    def get_object(self):
+        profile, _ = request_user_profile(self.request.user)
+        return profile
+
+
+def request_user_profile(user):
+    if hasattr(user, 'patient_profile'):
+        return user.patient_profile, False
+    return PatientProfile.objects.get_or_create(
+        user=user,
+        defaults={'full_name': ''.join([part for part in [user.last_name, user.first_name] if part])},
+    )
 
 
 class UserManagementView(ListCreateAPIView):

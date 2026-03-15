@@ -106,6 +106,40 @@ class LoginApiTests(APITestCase):
         self.assertEqual(user.patient_profile.phone, '13800138000')
         self.assertEqual(user.patient_profile.full_name, '陈芳婷')
 
+    def test_authenticated_user_can_get_me_and_logout(self):
+        token = Token.objects.create(user=self.user)
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {token.key}')
+
+        me_response = self.client.get('/api/v1/auth/me')
+        logout_response = self.client.post('/api/v1/auth/logout', {}, format='json')
+
+        self.assertEqual(me_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(me_response.data['user']['username'], 'alice')
+        self.assertEqual(logout_response.status_code, status.HTTP_200_OK)
+        self.assertFalse(Token.objects.filter(user=self.user).exists())
+
+    def test_authenticated_user_can_get_and_update_profile(self):
+        token = Token.objects.create(user=self.user)
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {token.key}')
+
+        get_response = self.client.get('/api/v1/profile')
+        update_response = self.client.put(
+            '/api/v1/profile',
+            {
+                'full_name': 'Alice Chen',
+                'phone': '13800138001',
+                'age': 55,
+                'sex': 'female',
+                'notes': 'test note',
+            },
+            format='json',
+        )
+
+        self.assertEqual(get_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(update_response.status_code, status.HTTP_200_OK)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.patient_profile.phone, '13800138001')
+
 
 class UserManagementApiTests(APITestCase):
     def setUp(self):

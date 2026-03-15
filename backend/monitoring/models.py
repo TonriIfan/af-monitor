@@ -227,3 +227,47 @@ class AiSettings(models.Model):
 
     def __str__(self):
         return f'AI Settings ({self.mode})'
+
+
+class SymptomFeedback(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='symptom_feedbacks',
+    )
+    symptoms = models.JSONField(default=list, blank=True)
+    severity = models.PositiveSmallIntegerField(default=1)
+    duration_minutes = models.PositiveIntegerField(null=True, blank=True)
+    notes = models.TextField(blank=True)
+    occurred_at = models.DateTimeField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-occurred_at', '-id']
+
+
+class PushDeviceRegistration(models.Model):
+    PLATFORM_IOS = 'ios'
+    PLATFORM_ANDROID = 'android'
+    PLATFORM_HARMONY = 'harmony'
+    PLATFORM_CHOICES = [
+        (PLATFORM_IOS, 'ios'),
+        (PLATFORM_ANDROID, 'android'),
+        (PLATFORM_HARMONY, 'harmony'),
+    ]
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='push_devices',
+    )
+    device_token = models.CharField(max_length=255, unique=True)
+    platform = models.CharField(max_length=16, choices=PLATFORM_CHOICES)
+    app_version = models.CharField(max_length=32, blank=True)
+    device_name = models.CharField(max_length=128, blank=True)
+    is_active = models.BooleanField(default=True)
+    last_seen_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-last_seen_at']

@@ -52,4 +52,23 @@ class DeviceBindApiTests(APITestCase):
         self.assertEqual(len(response.data), 1)
         self.assertEqual(response.data[0]['device_id'], 'ring-001')
 
+    def test_device_current_and_unbind(self):
+        self.client.post(
+            '/api/v1/devices/bind',
+            {
+                'device_id': 'ring-001',
+                'name': 'Smart Ring',
+                'alias': '我的戒指',
+            },
+            format='json',
+        )
+
+        current_response = self.client.get('/api/v1/devices/current')
+        unbind_response = self.client.post('/api/v1/devices/unbind', {'device_id': 'ring-001'}, format='json')
+
+        self.assertEqual(current_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(current_response.data['device_id'], 'ring-001')
+        self.assertEqual(unbind_response.status_code, status.HTTP_200_OK)
+        self.assertFalse(DeviceBinding.objects.get(device__device_id='ring-001', user=self.user).is_active)
+
 # Create your tests here.

@@ -6,21 +6,35 @@ from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .llm import build_demo_llm_context, build_measurement_llm_context, get_ai_settings, request_llm_insight
-from .models import AiSettings, AlertEvent, Measurement
+from .llm import (
+    build_demo_llm_context,
+    build_measurement_llm_context,
+    get_ai_settings,
+    request_ai_chat,
+    request_llm_insight,
+)
+from .models import AiSettings, AlertEvent, Measurement, PushDeviceRegistration, SymptomFeedback
 from .serializers import (
     AlertSerializer,
     AlertStateUpdateSerializer,
     AiSettingsSerializer,
     DashboardOverviewSerializer,
+    MeasurementBatchIngestSerializer,
     MeasurementTrendSerializer,
     MeasurementSerializer,
     PacketIngestSerializer,
+    PushDeviceRegistrationSerializer,
+    SymptomFeedbackSerializer,
 )
 from .services import (
     alerts_queryset_for_scope,
+    build_analysis_history,
+    build_analysis_latest,
     build_dashboard_overview,
+    build_home_summary,
+    build_measurement_chart,
     build_measurement_trends,
+    build_period_report,
     ingest_packet,
     measurements_queryset_for_scope,
     scope_user_for_request,
@@ -41,6 +55,31 @@ class PacketIngestView(APIView):
         )
         return Response(
             MeasurementSerializer(bundle['measurement']).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class PacketBatchIngestView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        serializer = MeasurementBatchIngestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        created_items = []
+        raw_items = list(request.data.get('items', []))
+        for index, item in enumerate(serializer.validated_data['items']):
+            raw_payload = raw_items[index] if index < len(raw_items) else item
+            bundle = ingest_packet(
+                validated_data=item,
+                raw_payload=raw_payload,
+                request_user=request.user,
+            )
+            created_items.append(MeasurementSerializer(bundle['measurement']).data)
+        return Response(
+            {
+                'created_count': len(created_items),
+                'items': created_items,
+            },
             status=status.HTTP_201_CREATED,
         )
 
@@ -90,6 +129,19 @@ class MeasurementLatestView(generics.RetrieveAPIView):
         return Response(serializer.data)
 
 
+class MeasurementDetailView(generics.RetrieveAPIView):
+    serializer_class = MeasurementSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    lookup_url_kwarg = 'measurement_id'
+
+    def get_object(self):
+        scope_user = scope_user_for_request(self.request)
+        return get_object_or_404(
+            measurements_queryset_for_scope(scope_user).select_related('raw_packet'),
+            id=self.kwargs[self.lookup_url_kwarg],
+        )
+
+
 class AlertListView(generics.ListAPIView):
     serializer_class = AlertSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -101,6 +153,16 @@ class AlertListView(generics.ListAPIView):
         if device_id:
             queryset = queryset.filter(device__device_id=device_id)
         return queryset
+
+
+class AlertDetailView(generics.RetrieveAPIView):
+    serializer_class = AlertSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    lookup_url_kwarg = 'alert_id'
+
+    def get_object(self):
+        scope_user = scope_user_for_request(self.request)
+        return get_object_or_404(alerts_queryset_for_scope(scope_user), id=self.kwargs[self.lookup_url_kwarg])
 
 
 class AlertReadView(APIView):
@@ -116,6 +178,36 @@ class AlertReadView(APIView):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(AlertSerializer(alert).data, status=status.HTTP_200_OK)
+
+
+class AlertReadAllView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        from django.utils import timezone
+
+        scope_user = scope_user_for_request(request) or request.user
+        queryset = alerts_queryset_for_scope(scope_user).filter(status=AlertEvent.STATUS_UNREAD)
+        read_at_raw = request.data.get('read_at')
+        read_at = parse_datetime(read_at_raw) if isinstance(read_at_raw, str) and read_at_raw else timezone.now()
+        updated = queryset.update(status=AlertEvent.STATUS_READ, is_read=True, read_at=read_at)
+        return Response({'updated_count': updated}, status=status.HTTP_200_OK)
+
+
+class AlertUnreadCountView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        scope_user = scope_user_for_request(request) or request.user
+        count = alerts_queryset_for_scope(scope_user).filter(status=AlertEvent.STATUS_UNREAD).count()
+        return Response({'unread_count': count}, status=status.HTTP_200_OK)
+
+
+class HomeSummaryView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        return Response(build_home_summary(request.user), status=status.HTTP_200_OK)
 
 
 class DashboardOverviewView(APIView):
@@ -136,6 +228,40 @@ class MeasurementTrendView(APIView):
         return Response(serializer.data)
 
 
+class MeasurementChartView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        scope_user = scope_user_for_request(request) or request.user
+        metric = request.query_params.get('metric', 'heart_rate')
+        range_key = request.query_params.get('range', '7d')
+        try:
+            payload = build_measurement_chart(scope_user, metric, range_key)
+        except ValueError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(payload, status=status.HTTP_200_OK)
+
+
+class AnalysisLatestView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        scope_user = scope_user_for_request(request) or request.user
+        payload = build_analysis_latest(scope_user)
+        if payload is None:
+            return Response({'detail': '暂无分析结果。'}, status=status.HTTP_404_NOT_FOUND)
+        return Response(payload, status=status.HTTP_200_OK)
+
+
+class AnalysisHistoryView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        scope_user = scope_user_for_request(request) or request.user
+        limit = min(int(request.query_params.get('limit', 20)), 100)
+        return Response({'items': build_analysis_history(scope_user, limit)}, status=status.HTTP_200_OK)
+
+
 class MeasurementLlmInsightView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -147,6 +273,29 @@ class MeasurementLlmInsightView(APIView):
         )
         context = build_measurement_llm_context(measurement, measurement.analysis_result)
         payload = request_llm_insight(context)
+        return Response(payload, status=status.HTTP_200_OK)
+
+
+class AiChatView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        message = (request.data.get('message') or '').strip()
+        if not message:
+            return Response({'detail': 'message 不能为空。'}, status=status.HTTP_400_BAD_REQUEST)
+        latest_analysis = build_analysis_latest(request.user)
+        trends = build_measurement_trends(request.user)
+        unread_count = alerts_queryset_for_scope(request.user).filter(status=AlertEvent.STATUS_UNREAD).count()
+        payload = request_ai_chat(
+            {
+                'user_id': request.user.id,
+                'username': request.user.username,
+                'latest_analysis': latest_analysis['analysis'] if latest_analysis else None,
+                'trend_preview': trends['daily'],
+                'unread_alert_count': unread_count,
+            },
+            message,
+        )
         return Response(payload, status=status.HTTP_200_OK)
 
 
@@ -174,3 +323,46 @@ class AiSettingsTestView(APIView):
         payload = request_llm_insight(build_demo_llm_context(), overrides=serializer.validated_data)
         payload['ok'] = payload['source'] in {'template', 'llm'} and not payload.get('error')
         return Response(payload, status=status.HTTP_200_OK)
+
+
+class SymptomFeedbackView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        serializer = SymptomFeedbackSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        instance = SymptomFeedback.objects.create(user=request.user, **serializer.validated_data)
+        return Response(SymptomFeedbackSerializer(instance).data, status=status.HTTP_201_CREATED)
+
+
+class PushRegisterDeviceView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        serializer = PushDeviceRegistrationSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        instance, _ = PushDeviceRegistration.objects.update_or_create(
+            device_token=serializer.validated_data['device_token'],
+            defaults={
+                'user': request.user,
+                'platform': serializer.validated_data['platform'],
+                'app_version': serializer.validated_data.get('app_version', ''),
+                'device_name': serializer.validated_data.get('device_name', ''),
+                'is_active': serializer.validated_data.get('is_active', True),
+            },
+        )
+        return Response(PushDeviceRegistrationSerializer(instance).data, status=status.HTTP_200_OK)
+
+
+class WeeklyReportView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        return Response(build_period_report(request.user, 7), status=status.HTTP_200_OK)
+
+
+class MonthlyReportView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        return Response(build_period_report(request.user, 30), status=status.HTTP_200_OK)

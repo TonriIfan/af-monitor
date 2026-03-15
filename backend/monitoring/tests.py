@@ -6,7 +6,7 @@ from rest_framework.test import APITestCase
 
 from devices.models import Device, DeviceBinding
 
-from .models import AiSettings, AlertEvent, Measurement, RawPacket
+from .models import AiSettings, AlertEvent, Measurement, PushDeviceRegistration, RawPacket, SymptomFeedback
 from .services import parse_packet
 
 
@@ -393,5 +393,130 @@ class PacketIngestApiTests(APITestCase):
         self.assertEqual(response.data['user_summaries'][0]['username'], self.user.username)
         self.assertEqual(measurements_response.status_code, status.HTTP_200_OK)
         self.assertTrue(all(item['username'] != 'manager' for item in measurements_response.data))
+
+    def test_app_home_summary_and_detail_endpoints_work(self):
+        ingest = self.client.post(
+            '/api/v1/packets',
+            {
+                'device_id': 'ring-001',
+                'client_time': '2026-03-15T16:00:00+08:00',
+                'source': 'wechat-miniapp',
+                'payload': {'frame_hex': '00 00 31 00 03 78 28 55 8E 0E'},
+            },
+            format='json',
+        )
+        alert = AlertEvent.objects.first()
+
+        summary_response = self.client.get('/api/v1/home/summary')
+        measurement_detail_response = self.client.get(f"/api/v1/measurements/{ingest.data['id']}")
+        alert_detail_response = self.client.get(f'/api/v1/alerts/{alert.id}')
+
+        self.assertEqual(summary_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(summary_response.data['counts']['measurements'], 1)
+        self.assertEqual(measurement_detail_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(alert_detail_response.status_code, status.HTTP_200_OK)
+
+    def test_alert_read_all_and_unread_count(self):
+        self.client.post(
+            '/api/v1/packets',
+            {
+                'device_id': 'ring-001',
+                'client_time': '2026-03-15T16:10:00+08:00',
+                'source': 'wechat-miniapp',
+                'payload': {'frame_hex': '00 00 31 00 03 78 28 55 8E 0E'},
+            },
+            format='json',
+        )
+
+        unread_response = self.client.get('/api/v1/alerts/unread-count')
+        read_all_response = self.client.post('/api/v1/alerts/read-all', {}, format='json')
+
+        self.assertEqual(unread_response.status_code, status.HTTP_200_OK)
+        self.assertGreaterEqual(unread_response.data['unread_count'], 1)
+        self.assertEqual(read_all_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(AlertEvent.objects.filter(status='unread').count(), 0)
+
+    def test_chart_analysis_and_reports_endpoints(self):
+        for timestamp, frame_hex in [
+            ('2026-03-10T10:00:00+08:00', '00 00 31 00 03 60 20 20 70 0E'),
+            ('2026-03-15T10:00:00+08:00', '00 00 31 00 03 78 28 55 8E 0E'),
+        ]:
+            self.client.post(
+                '/api/v1/packets',
+                {
+                    'device_id': 'ring-001',
+                    'client_time': timestamp,
+                    'source': 'wechat-miniapp',
+                    'payload': {'frame_hex': frame_hex},
+                },
+                format='json',
+            )
+
+        chart_response = self.client.get('/api/v1/measurements/chart?metric=heart_rate&range=7d')
+        latest_response = self.client.get('/api/v1/analysis/latest')
+        history_response = self.client.get('/api/v1/analysis/history?limit=5')
+        weekly_response = self.client.get('/api/v1/reports/weekly')
+        monthly_response = self.client.get('/api/v1/reports/monthly')
+
+        self.assertEqual(chart_response.status_code, status.HTTP_200_OK)
+        self.assertIn('points', chart_response.data)
+        self.assertEqual(latest_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(history_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(weekly_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(monthly_response.status_code, status.HTTP_200_OK)
+
+    def test_feedback_push_batch_and_ai_chat_endpoints(self):
+        batch_response = self.client.post(
+            '/api/v1/measurements/batch',
+            {
+                'items': [
+                    {
+                        'device_id': 'ring-001',
+                        'client_time': '2026-03-15T17:00:00+08:00',
+                        'source': 'wechat-miniapp',
+                        'payload': {'frame_hex': '00 00 31 00 03 78 28 55 8E 0E'},
+                    },
+                    {
+                        'device_id': 'ring-001',
+                        'client_time': '2026-03-15T17:10:00+08:00',
+                        'source': 'wechat-miniapp',
+                        'payload': {'frame_hex': '00 00 32 00 03 78 5D 6E 0E'},
+                    },
+                ]
+            },
+            format='json',
+        )
+        feedback_response = self.client.post(
+            '/api/v1/feedback/symptoms',
+            {
+                'symptoms': ['palpitation', 'dizziness'],
+                'severity': 4,
+                'duration_minutes': 15,
+                'notes': '晚间发作',
+                'occurred_at': '2026-03-15T17:30:00+08:00',
+            },
+            format='json',
+        )
+        push_response = self.client.post(
+            '/api/v1/push/register-device',
+            {
+                'device_token': 'push-token-001',
+                'platform': 'android',
+                'app_version': '1.0.0',
+                'device_name': 'Pixel',
+                'is_active': True,
+            },
+            format='json',
+        )
+        chat_response = self.client.post('/api/v1/ai/chat', {'message': '我现在需要马上去医院吗？'}, format='json')
+
+        self.assertEqual(batch_response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(batch_response.data['created_count'], 2)
+        self.assertEqual(feedback_response.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(SymptomFeedback.objects.filter(user=self.user).exists())
+        self.assertEqual(push_response.status_code, status.HTTP_200_OK)
+        self.assertTrue(PushDeviceRegistration.objects.filter(user=self.user, device_token='push-token-001').exists())
+        self.assertEqual(chat_response.status_code, status.HTTP_200_OK)
+        self.assertIn('content', chat_response.data)
 
 # Create your tests here.

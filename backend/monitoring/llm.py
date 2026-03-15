@@ -102,6 +102,17 @@ def build_llm_prompt(context: dict[str, Any]) -> str:
     )
 
 
+def build_ai_chat_prompt(context: dict[str, Any], user_message: str) -> str:
+    return (
+        '你是房颤监测系统中的健康解读助手。'
+        '请结合用户的近期监测概况、风险趋势、告警记录和当前提问，'
+        '用简洁、谨慎、面向患者的中文给出解读与建议。'
+        '不能做临床确诊，不能夸大风险。'
+        f'\n\n用户问题：{user_message}'
+        f'\n\n上下文数据：\n{json.dumps(context, ensure_ascii=False, indent=2)}'
+    )
+
+
 def build_patient_friendly_template(context: dict[str, Any]) -> str:
     analysis = context['analysis']
     details = analysis.get('details') or {}
@@ -143,6 +154,23 @@ def build_patient_friendly_template(context: dict[str, Any]) -> str:
     )
 
 
+def build_patient_chat_template(context: dict[str, Any], user_message: str) -> str:
+    latest = context.get('latest_analysis') or {}
+    latest_level = latest.get('risk_level') or 'unknown'
+    latest_summary = latest.get('summary') or '近期暂无明显异常结论。'
+    unread_alerts = context.get('unread_alert_count', 0)
+    return '\n'.join(
+        [
+            f'针对你的问题“{user_message}”，系统先给出辅助说明：',
+            f'1. 最近一次风险等级为 {latest_level}。',
+            f'2. 最近一次分析摘要：{latest_summary}',
+            f'3. 当前未读告警数：{unread_alerts}。',
+            '4. 这类结果适合用于风险提醒和持续观察，不能替代心电图或医生面诊。',
+            '5. 如果近期连续出现高风险提示，或伴随心悸、胸闷、头晕、乏力，应尽快就医。',
+        ]
+    )
+
+
 def _effective_settings(settings_obj: AiSettings, overrides: dict[str, Any] | None = None) -> dict[str, Any]:
     overrides = overrides or {}
     return {
@@ -170,6 +198,74 @@ def request_llm_insight(context: dict[str, Any], overrides: dict[str, Any] | Non
         'context': context,
         'content': template_content,
         'template_content': template_content,
+        'source': 'template',
+    }
+
+    if not effective['enabled'] or effective['mode'] in {AiSettings.MODE_DISABLED, AiSettings.MODE_TEMPLATE}:
+        return payload
+
+    api_base_url = effective['api_base_url']
+    api_key = effective['api_key']
+    model = effective['model']
+
+    if effective['mode'] != AiSettings.MODE_OPENAI_COMPATIBLE or not api_base_url or not api_key:
+        payload['source'] = 'template_fallback'
+        return payload
+
+    request_body = json.dumps(
+        {
+            'model': model,
+            'messages': [
+                {'role': 'system', 'content': effective['system_prompt'] or '你是谨慎的健康监测辅助分析助手。'},
+                {'role': 'user', 'content': prompt},
+            ],
+            'temperature': effective['temperature'],
+        }
+    ).encode('utf-8')
+
+    request = Request(
+        f'{api_base_url}/chat/completions',
+        data=request_body,
+        headers={
+            'Content-Type': 'application/json',
+            'Authorization': f'Bearer {api_key}',
+        },
+        method='POST',
+    )
+
+    try:
+        with urlopen(request, timeout=LLM_TIMEOUT) as response:
+            response_payload = json.loads(response.read().decode('utf-8'))
+    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as exc:
+        payload['error'] = str(exc)
+        payload['source'] = 'template_fallback'
+        return payload
+
+    content = (
+        response_payload.get('choices', [{}])[0]
+        .get('message', {})
+        .get('content', '')
+        .strip()
+    )
+    payload['available'] = True
+    payload['content'] = content
+    payload['source'] = 'llm'
+    return payload
+
+
+def request_ai_chat(context: dict[str, Any], user_message: str, overrides: dict[str, Any] | None = None) -> dict[str, Any]:
+    settings_obj = get_ai_settings()
+    effective = _effective_settings(settings_obj, overrides)
+    prompt = build_ai_chat_prompt(context, user_message)
+    template_content = build_patient_chat_template(context, user_message)
+    payload = {
+        'available': bool(effective['enabled']),
+        'mode': effective['mode'],
+        'provider': effective['mode'],
+        'model': effective['model'],
+        'prompt': prompt,
+        'context': context,
+        'content': template_content,
         'source': 'template',
     }
 
