@@ -6,8 +6,7 @@ from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .llm import build_measurement_llm_context, request_llm_insight
-from .llm import get_ai_settings
+from .llm import build_demo_llm_context, build_measurement_llm_context, get_ai_settings, request_llm_insight
 from .models import AiSettings, AlertEvent, Measurement
 from .serializers import (
     AlertSerializer,
@@ -164,3 +163,14 @@ class AiSettingsView(APIView):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(AiSettingsSerializer(settings_obj).data, status=status.HTTP_200_OK)
+
+
+class AiSettingsTestView(APIView):
+    permission_classes = [permissions.IsAdminUser]
+
+    def post(self, request):
+        serializer = AiSettingsSerializer(instance=get_ai_settings(), data=request.data or {}, partial=True)
+        serializer.is_valid(raise_exception=True)
+        payload = request_llm_insight(build_demo_llm_context(), overrides=serializer.validated_data)
+        payload['ok'] = payload['source'] in {'template', 'llm'} and not payload.get('error')
+        return Response(payload, status=status.HTTP_200_OK)

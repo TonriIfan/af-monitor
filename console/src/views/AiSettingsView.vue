@@ -8,6 +8,7 @@
         </div>
         <div class="filter-row">
           <el-button @click="loadSettings">刷新</el-button>
+          <el-button :loading="testing" @click="testSettings">测试可用性</el-button>
           <el-button type="primary" :loading="saving" @click="saveSettings">保存配置</el-button>
         </div>
       </div>
@@ -90,6 +91,36 @@
           </div>
         </article>
       </div>
+
+      <article class="panel panel--dense">
+        <div class="panel__header">
+          <div>
+            <p class="section-eyebrow">AI test</p>
+            <h3>测试结果</h3>
+          </div>
+        </div>
+        <div class="timeline-list">
+          <div class="timeline-item">
+            <strong>状态</strong>
+            <p>{{ testResult.ok === null ? '未测试' : testResult.ok ? '可用' : '不可用' }}</p>
+          </div>
+          <div class="timeline-item">
+            <strong>来源</strong>
+            <p>{{ testResult.source || '--' }}</p>
+          </div>
+          <div class="timeline-item">
+            <strong>说明</strong>
+            <p>{{ testResult.error || testResult.message || '点击“测试可用性”后显示结果。' }}</p>
+          </div>
+        </div>
+        <el-input
+          v-if="testResult.content"
+          :model-value="testResult.content"
+          type="textarea"
+          :rows="12"
+          readonly
+        />
+      </article>
     </article>
   </div>
 </template>
@@ -102,6 +133,7 @@ import { api } from '../utils/api'
 import { formatDateTime } from '../utils/format'
 
 const saving = ref(false)
+const testing = ref(false)
 const form = reactive({
   enabled: false,
   mode: 'template',
@@ -113,6 +145,13 @@ const form = reactive({
   temperature: 0.2,
   system_prompt: '',
   updated_at: '',
+})
+const testResult = reactive({
+  ok: null as null | boolean,
+  source: '',
+  content: '',
+  error: '',
+  message: '',
 })
 
 async function loadSettings() {
@@ -143,6 +182,41 @@ async function saveSettings() {
     ElMessage.error('AI 设置保存失败。')
   } finally {
     saving.value = false
+  }
+}
+
+async function testSettings() {
+  testing.value = true
+  try {
+    const payload = {
+      enabled: form.enabled,
+      mode: form.mode,
+      api_base_url: form.api_base_url,
+      model: form.model,
+      temperature: form.temperature,
+      system_prompt: form.system_prompt,
+      ...(form.api_key ? { api_key: form.api_key } : {}),
+    }
+    const { data } = await api.post('/ai/settings/test', payload)
+    Object.assign(testResult, {
+      ok: Boolean(data.ok),
+      source: data.source || '',
+      content: data.content || '',
+      error: data.error || '',
+      message: data.ok ? 'AI 测试通过。' : 'AI 测试未通过。',
+    })
+    ElMessage.success(data.ok ? 'AI 测试通过。' : 'AI 测试完成。')
+  } catch {
+    Object.assign(testResult, {
+      ok: false,
+      source: '',
+      content: '',
+      error: 'AI 测试请求失败。',
+      message: '',
+    })
+    ElMessage.error('AI 测试失败。')
+  } finally {
+    testing.value = false
   }
 }
 

@@ -1,11 +1,12 @@
 from django.contrib.auth import get_user_model
+from django.core.management import call_command
 from rest_framework import status
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
 
 from devices.models import Device, DeviceBinding
 
-from .models import AiSettings, AlertEvent, RawPacket
+from .models import AiSettings, AlertEvent, Measurement, RawPacket
 from .services import parse_packet
 
 
@@ -22,6 +23,20 @@ class PacketParserTests(APITestCase):
         self.assertEqual(result.parsed['hrv'], 36)
         self.assertEqual(result.parsed['stress'], 80)
         self.assertAlmostEqual(result.parsed['temperature'], 37.26, places=2)
+
+    def test_generate_mock_monitoring_data_command_creates_measurements(self):
+        call_command(
+            'generate_mock_monitoring_data',
+            username='cmd-user',
+            device_id='cmd-ring-001',
+            scenario='trend',
+            count=4,
+            interval_minutes=30,
+        )
+
+        self.assertTrue(get_user_model().objects.filter(username='cmd-user').exists())
+        self.assertTrue(Device.objects.filter(device_id='cmd-ring-001').exists())
+        self.assertGreater(Measurement.objects.filter(device__device_id='cmd-ring-001').count(), 0)
 
 
 class PacketIngestApiTests(APITestCase):
@@ -264,6 +279,32 @@ class PacketIngestApiTests(APITestCase):
         self.assertTrue(settings_obj.enabled)
         self.assertEqual(settings_obj.mode, 'template')
         self.assertEqual(settings_obj.system_prompt, 'test prompt')
+
+    def test_admin_can_test_ai_settings_with_template_mode(self):
+        admin = get_user_model().objects.create_user(
+            username='manager-test',
+            password='pass12345',
+            role=get_user_model().Role.ADMIN,
+            is_staff=True,
+            is_superuser=True,
+        )
+        admin_token = Token.objects.create(user=admin)
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {admin_token.key}')
+
+        response = self.client.post(
+            '/api/v1/ai/settings/test',
+            {
+                'enabled': True,
+                'mode': 'template',
+                'model': 'gpt-4o-mini',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data['ok'])
+        self.assertEqual(response.data['source'], 'template')
+        self.assertIn('结果解读', response.data['content'])
 
     def test_staff_can_scope_dashboard_by_user(self):
         other_user = get_user_model().objects.create_user(

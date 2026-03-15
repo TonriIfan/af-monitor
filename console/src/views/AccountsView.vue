@@ -1,6 +1,6 @@
 <template>
-  <div class="page-grid">
-    <section class="split-panel">
+  <div class="page-grid page-grid--accounts">
+    <section class="split-panel split-panel--accounts">
       <article class="panel">
         <div class="panel__header">
           <div>
@@ -21,57 +21,59 @@
           </div>
         </div>
 
-        <el-table :data="management.users" stripe @selection-change="handleSelectionChange">
-          <el-table-column type="selection" width="48" />
-          <el-table-column prop="username" label="用户名" min-width="140" />
-          <el-table-column label="姓名" min-width="140">
-            <template #default="{ row }">
-              {{ [row.last_name, row.first_name].filter(Boolean).join('') || '--' }}
-            </template>
-          </el-table-column>
-          <el-table-column prop="email" label="邮箱" min-width="180" />
-          <el-table-column prop="device_count" label="设备数" min-width="90" />
-          <el-table-column prop="measurement_count" label="测量数" min-width="90" />
-          <el-table-column prop="unread_alert_count" label="未读告警" min-width="100" />
-          <el-table-column label="角色" min-width="100">
-            <template #default="{ row }">
-              <el-tag :type="row.role === 'admin' ? 'danger' : 'info'">{{ row.role === 'admin' ? '管理' : '普通' }}</el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column prop="last_login_ip" label="登录 IP" min-width="140" />
-          <el-table-column label="省市" min-width="180">
-            <template #default="{ row }">
-              {{ [row.last_login_location?.region, row.last_login_location?.city].filter(Boolean).join(' / ') || '--' }}
-            </template>
-          </el-table-column>
-          <el-table-column label="最近活动" min-width="180">
-            <template #default="{ row }">{{ formatDateTime(row.latest_activity_at) }}</template>
-          </el-table-column>
-          <el-table-column label="操作" min-width="220">
-            <template #default="{ row }">
-              <el-button
-                v-if="row.role !== 'admin'"
-                link
-                type="primary"
-                @click="viewUser(row.id)"
-              >
-                查看测量
-              </el-button>
-              <span v-else class="panel__helper">后台账号</span>
-              <el-button
-                link
-                type="danger"
-                :disabled="row.id === auth.user?.id"
-                @click="handleDelete(row.id, row.username)"
-              >
-                删除
-              </el-button>
-            </template>
-          </el-table-column>
-        </el-table>
+        <div class="table-shell table-shell--accounts">
+          <el-table :data="management.users" stripe @selection-change="handleSelectionChange">
+            <el-table-column type="selection" width="48" />
+            <el-table-column prop="username" label="用户名" min-width="140" />
+            <el-table-column label="姓名" min-width="140">
+              <template #default="{ row }">
+                {{ [row.last_name, row.first_name].filter(Boolean).join('') || '--' }}
+              </template>
+            </el-table-column>
+            <el-table-column prop="email" label="邮箱" min-width="180" />
+            <el-table-column prop="device_count" label="设备数" min-width="90" />
+            <el-table-column prop="measurement_count" label="测量数" min-width="90" />
+            <el-table-column prop="unread_alert_count" label="未读告警" min-width="100" />
+            <el-table-column label="角色" min-width="100">
+              <template #default="{ row }">
+                <el-tag :type="row.role === 'admin' ? 'danger' : 'info'">{{ row.role === 'admin' ? '管理' : '普通' }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="last_login_ip" label="登录 IP" min-width="140" />
+            <el-table-column label="省市" min-width="180">
+              <template #default="{ row }">
+                {{ [row.last_login_location?.region, row.last_login_location?.city].filter(Boolean).join(' / ') || '--' }}
+              </template>
+            </el-table-column>
+            <el-table-column label="最近活动" min-width="180">
+              <template #default="{ row }">{{ formatDateTime(row.latest_activity_at) }}</template>
+            </el-table-column>
+            <el-table-column label="操作" min-width="220">
+              <template #default="{ row }">
+                <el-button
+                  v-if="row.role !== 'admin'"
+                  link
+                  type="primary"
+                  @click="viewUser(row.id)"
+                >
+                  查看测量
+                </el-button>
+                <span v-else class="panel__helper">后台账号</span>
+                <el-button
+                  link
+                  type="danger"
+                  :disabled="row.id === auth.user?.id"
+                  @click="handleDelete(row.id, row.username)"
+                >
+                  删除
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
       </article>
 
-      <article class="panel panel--dense">
+      <article class="panel panel--dense accounts-form-panel">
         <div class="panel__header">
           <div>
             <p class="section-eyebrow">Create account</p>

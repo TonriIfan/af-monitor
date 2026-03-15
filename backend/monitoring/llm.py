@@ -33,7 +33,61 @@ def build_measurement_llm_context(measurement, analysis_result) -> dict[str, Any
             'risk_score': float(analysis_result.risk_score),
             'labels': analysis_result.labels,
             'triggers': analysis_result.triggers,
+            'details': analysis_result.details,
             'summary': analysis_result.summary,
+        },
+    }
+
+
+def build_demo_llm_context() -> dict[str, Any]:
+    return {
+        'measurement_id': 0,
+        'device_id': 'demo-ring-001',
+        'username': 'demo-user',
+        'measured_at': '2026-03-16T09:30:00+08:00',
+        'packet_kind': 'heart_rate',
+        'parsed': {
+            'heartRate': 118,
+            'hrv': 42,
+            'stress': 85,
+            'oxygen': 93,
+            'temperature': 37.1,
+        },
+        'analysis': {
+            'algorithm_version': 'rules-window-baseline-v2',
+            'risk_level': 'high',
+            'risk_score': 0.72,
+            'labels': ['较高异常心律风险', '存在连续时间窗异常', '存在个人基线偏移'],
+            'triggers': [
+                'realtime_tachycardia',
+                'realtime_hrv_instability',
+                'realtime_low_oxygen',
+                'window_repeated_tachycardia_30m',
+                'baseline_heart_rate_above_personal_baseline',
+            ],
+            'details': {
+                'realtime_flags': [
+                    'realtime_tachycardia',
+                    'realtime_hrv_instability',
+                    'realtime_low_oxygen',
+                ],
+                'window_flags': ['window_repeated_tachycardia_30m'],
+                'baseline_flags': ['baseline_heart_rate_above_personal_baseline'],
+                'window_stats': {
+                    'tachycardia_count_30m': 3,
+                    'low_oxygen_count_30m': 2,
+                    'hrv_instability_count_30m': 3,
+                    'high_risk_count_24h': 2,
+                },
+                'baselines': {
+                    'heart_rate': 82.4,
+                    'hrv': 27.6,
+                    'oxygen': 97.2,
+                    'temperature': 36.5,
+                },
+                'wearing_effective': True,
+            },
+            'summary': '实时异常: realtime_tachycardia, realtime_hrv_instability, realtime_low_oxygen；时间窗异常: window_repeated_tachycardia_30m；基线偏移: baseline_heart_rate_above_personal_baseline',
         },
     }
 
@@ -89,15 +143,29 @@ def build_patient_friendly_template(context: dict[str, Any]) -> str:
     )
 
 
-def request_llm_insight(context: dict[str, Any]) -> dict[str, Any]:
+def _effective_settings(settings_obj: AiSettings, overrides: dict[str, Any] | None = None) -> dict[str, Any]:
+    overrides = overrides or {}
+    return {
+        'enabled': overrides.get('enabled', settings_obj.enabled),
+        'mode': overrides.get('mode', settings_obj.mode),
+        'api_base_url': overrides.get('api_base_url', settings_obj.api_base_url) or LLM_API_BASE_URL,
+        'api_key': overrides.get('api_key', settings_obj.api_key) or LLM_API_KEY,
+        'model': overrides.get('model', settings_obj.model) or LLM_MODEL,
+        'temperature': float(overrides.get('temperature', settings_obj.temperature)),
+        'system_prompt': overrides.get('system_prompt', settings_obj.system_prompt),
+    }
+
+
+def request_llm_insight(context: dict[str, Any], overrides: dict[str, Any] | None = None) -> dict[str, Any]:
     settings_obj = get_ai_settings()
+    effective = _effective_settings(settings_obj, overrides)
     prompt = build_llm_prompt(context)
     template_content = build_patient_friendly_template(context)
     payload = {
-        'available': settings_obj.enabled,
-        'mode': settings_obj.mode,
-        'provider': settings_obj.mode,
-        'model': settings_obj.model,
+        'available': bool(effective['enabled']),
+        'mode': effective['mode'],
+        'provider': effective['mode'],
+        'model': effective['model'],
         'prompt': prompt,
         'context': context,
         'content': template_content,
@@ -105,14 +173,14 @@ def request_llm_insight(context: dict[str, Any]) -> dict[str, Any]:
         'source': 'template',
     }
 
-    if not settings_obj.enabled or settings_obj.mode in {AiSettings.MODE_DISABLED, AiSettings.MODE_TEMPLATE}:
+    if not effective['enabled'] or effective['mode'] in {AiSettings.MODE_DISABLED, AiSettings.MODE_TEMPLATE}:
         return payload
 
-    api_base_url = settings_obj.api_base_url or LLM_API_BASE_URL
-    api_key = settings_obj.api_key or LLM_API_KEY
-    model = settings_obj.model or LLM_MODEL
+    api_base_url = effective['api_base_url']
+    api_key = effective['api_key']
+    model = effective['model']
 
-    if settings_obj.mode != AiSettings.MODE_OPENAI_COMPATIBLE or not api_base_url or not api_key:
+    if effective['mode'] != AiSettings.MODE_OPENAI_COMPATIBLE or not api_base_url or not api_key:
         payload['source'] = 'template_fallback'
         return payload
 
@@ -120,10 +188,10 @@ def request_llm_insight(context: dict[str, Any]) -> dict[str, Any]:
         {
             'model': model,
             'messages': [
-                {'role': 'system', 'content': settings_obj.system_prompt or '你是谨慎的健康监测辅助分析助手。'},
+                {'role': 'system', 'content': effective['system_prompt'] or '你是谨慎的健康监测辅助分析助手。'},
                 {'role': 'user', 'content': prompt},
             ],
-            'temperature': float(settings_obj.temperature),
+            'temperature': effective['temperature'],
         }
     ).encode('utf-8')
 

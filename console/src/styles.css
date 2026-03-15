@@ -269,12 +269,39 @@ select {
   gap: 1rem;
 }
 
+.split-panel > * {
+  min-width: 0;
+}
+
 .panel {
   padding: clamp(1.2rem, 2vw, 1.6rem);
 }
 
 .panel--dense {
   align-content: start;
+}
+
+.split-panel--accounts {
+  grid-template-columns: minmax(0, 1fr) 340px;
+  align-items: start;
+}
+
+.accounts-form-panel {
+  position: sticky;
+  top: 0.25rem;
+}
+
+.table-shell {
+  min-width: 0;
+}
+
+.table-shell--accounts {
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+}
+
+.table-shell--accounts .el-table {
+  min-width: 1450px;
 }
 
 .panel__helper {
@@ -498,6 +525,14 @@ select {
 
   .stats-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .accounts-form-panel {
+    position: static;
+  }
+
+  .table-shell--accounts .el-table {
+    min-width: 1180px;
   }
 }
 
