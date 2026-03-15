@@ -30,7 +30,7 @@
           </div>
         </div>
         <p class="panel__helper" v-if="auth.user?.role === 'admin'">
-          当前视角：{{ management.selectedUser ? `${management.selectedUser.username} 的设备` : '全部账号设备' }}
+          当前视角：{{ management.selectedUser ? `${management.selectedUser.username} 的设备` : '全部用户设备' }}
         </p>
         <div class="device-grid" v-if="devices.length">
           <div v-for="device in devices" :key="device.device_id" class="device-tile">
@@ -40,7 +40,18 @@
             </div>
             <p>{{ device.device_id }}</p>
             <div class="device-tile__meta">
-              <span v-if="auth.user?.role === 'admin'">所属账号：{{ device.owner_username || '--' }}</span>
+              <span v-if="auth.user?.role === 'admin'">
+                所属用户：
+                <el-button
+                  v-if="device.owner_user_id"
+                  link
+                  type="primary"
+                  @click="focusUser(device.owner_user_id, device.owner_username)"
+                >
+                  {{ device.owner_username || '--' }}
+                </el-button>
+                <template v-else>{{ device.owner_username || '--' }}</template>
+              </span>
               <span>别名：{{ device.alias || '--' }}</span>
               <span>未读告警：{{ device.unread_alerts }}</span>
               <span>最近测量：{{ formatDateTime(device.latest_measurement_at) }}</span>
@@ -71,6 +82,12 @@ const form = reactive({
   name: '',
   alias: '',
 })
+
+function focusUser(userId?: number, username?: string) {
+  if (!userId) return
+  management.setSelectedUserId(String(userId))
+  ElMessage.success(`已切换到 ${username || '该用户'} 的设备视角。`)
+}
 
 async function loadDevices() {
   try {

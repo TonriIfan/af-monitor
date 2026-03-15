@@ -46,7 +46,8 @@ export const useManagementStore = defineStore('management', () => {
     if (loaded.value && !force) return users.value
     const { data } = await api.get('/auth/users')
     users.value = data
-    if (selectedUserId.value && !users.value.some((item) => String(item.id) === selectedUserId.value)) {
+    const selected = users.value.find((item) => String(item.id) === selectedUserId.value)
+    if (selectedUserId.value && (!selected || selected.role === 'admin')) {
       setSelectedUserId('')
     }
     loaded.value = true

@@ -9,11 +9,17 @@
         <el-button @click="loadAlerts">刷新</el-button>
       </div>
       <p class="panel__helper" v-if="auth.user?.role === 'admin'">
-        当前视角：{{ management.selectedUser ? `${management.selectedUser.username} 的告警` : '全部账号告警' }}
+        当前视角：{{ management.selectedUser ? `${management.selectedUser.username} 的告警` : '全部用户告警' }}
       </p>
 
       <el-table :data="alerts" stripe>
-        <el-table-column v-if="auth.user?.role === 'admin'" prop="username" label="账号" min-width="120" />
+        <el-table-column v-if="auth.user?.role === 'admin'" label="用户" min-width="160">
+          <template #default="{ row }">
+            <el-button link type="primary" @click="focusUser(row.user_id, row.username)">
+              {{ row.username || '--' }}
+            </el-button>
+          </template>
+        </el-table-column>
         <el-table-column prop="device_id" label="设备" min-width="130" />
         <el-table-column prop="title" label="标题" min-width="180" />
         <el-table-column label="等级" min-width="120">
@@ -58,6 +64,12 @@ import { formatDateTime, riskLabel, riskTagType } from '../utils/format'
 const auth = useAuthStore()
 const management = useManagementStore()
 const alerts = ref<Array<Record<string, any>>>([])
+
+function focusUser(userId?: number, username?: string) {
+  if (!userId) return
+  management.setSelectedUserId(String(userId))
+  ElMessage.success(`已切换到 ${username || '该用户'} 的告警视角。`)
+}
 
 async function loadAlerts() {
   try {

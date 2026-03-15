@@ -49,7 +49,15 @@
           </el-table-column>
           <el-table-column label="操作" min-width="220">
             <template #default="{ row }">
-              <el-button link type="primary" @click="viewUser(row.id)">查看该账号</el-button>
+              <el-button
+                v-if="row.role !== 'admin'"
+                link
+                type="primary"
+                @click="viewUser(row.id)"
+              >
+                查看测量
+              </el-button>
+              <span v-else class="panel__helper">后台账号</span>
               <el-button
                 link
                 type="danger"
@@ -212,7 +220,7 @@ function handleSelectionChange(rows: Array<{ id: number }>) {
 
 function viewUser(userId: number) {
   management.setSelectedUserId(String(userId))
-  router.push('/dashboard')
+  router.push('/measurements')
 }
 
 async function submitCreate() {

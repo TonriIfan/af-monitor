@@ -12,7 +12,7 @@
           <el-icon><User /></el-icon>
           <span>账号</span>
         </el-menu-item>
-        <el-menu-item index="/dashboard">
+        <el-menu-item v-if="auth.user?.role === 'admin'" index="/dashboard">
           <el-icon><DataBoard /></el-icon>
           <span>总览</span>
         </el-menu-item>
@@ -51,12 +51,12 @@
             :model-value="management.selectedUserId"
             class="scope-select"
             clearable
-            placeholder="查看全部账号"
+            placeholder="查看全部用户"
             @change="handleScopeChange"
           >
-            <el-option label="全部账号" value="" />
+            <el-option label="全部用户" value="" />
             <el-option
-              v-for="item in management.users"
+              v-for="item in scopeUsers"
               :key="item.id"
               :label="`${item.username} · ${item.device_count}台设备`"
               :value="String(item.id)"
@@ -84,6 +84,7 @@ const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const management = useManagementStore()
+const scopeUsers = computed(() => management.users.filter((item) => item.role !== 'admin'))
 
 const title = computed(() => {
   const map: Record<string, string> = {

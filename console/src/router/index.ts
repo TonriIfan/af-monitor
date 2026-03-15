@@ -15,7 +15,7 @@ const router = createRouter({
       path: '/',
       component: () => import('../layouts/ConsoleLayout.vue'),
       children: [
-        { path: '', redirect: '/dashboard' },
+        { path: '', redirect: '/measurements' },
         { path: 'accounts', name: 'accounts', component: () => import('../views/AccountsView.vue') },
         { path: 'dashboard', name: 'dashboard', component: () => import('../views/DashboardView.vue') },
         { path: 'devices', name: 'devices', component: () => import('../views/DevicesView.vue') },
@@ -30,15 +30,18 @@ router.beforeEach((to) => {
   const auth = useAuthStore()
   if (to.meta.public) {
     if (to.path === '/login' && auth.isAuthenticated) {
-      return '/dashboard'
+      return auth.user?.role === 'admin' ? '/dashboard' : '/measurements'
     }
     return true
   }
   if (!auth.isAuthenticated) {
     return `/login?redirect=${encodeURIComponent(to.fullPath)}`
   }
+  if (to.path === '/dashboard' && auth.user?.role !== 'admin') {
+    return '/measurements'
+  }
   if (to.path === '/accounts' && auth.user?.role !== 'admin') {
-    return '/dashboard'
+    return '/measurements'
   }
   return true
 })
