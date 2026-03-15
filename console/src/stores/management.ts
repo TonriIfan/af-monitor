@@ -46,6 +46,9 @@ export const useManagementStore = defineStore('management', () => {
     if (loaded.value && !force) return users.value
     const { data } = await api.get('/auth/users')
     users.value = data
+    if (selectedUserId.value && !users.value.some((item) => String(item.id) === selectedUserId.value)) {
+      setSelectedUserId('')
+    }
     loaded.value = true
     return data
   }
@@ -69,6 +72,24 @@ export const useManagementStore = defineStore('management', () => {
     return data
   }
 
+  async function createUsersBatch(payload: Record<string, unknown>) {
+    const { data } = await api.post('/auth/users/batch', payload)
+    await loadUsers(true)
+    return data
+  }
+
+  async function deleteUser(userId: number) {
+    const { data } = await api.delete(`/auth/users/${userId}`)
+    await loadUsers(true)
+    return data
+  }
+
+  async function deleteUsersBatch(userIds: number[]) {
+    const { data } = await api.post('/auth/users/batch-delete', { user_ids: userIds })
+    await loadUsers(true)
+    return data
+  }
+
   function reset() {
     users.value = []
     loaded.value = false
@@ -84,6 +105,9 @@ export const useManagementStore = defineStore('management', () => {
     setSelectedUserId,
     scopeParams,
     createUser,
+    createUsersBatch,
+    deleteUser,
+    deleteUsersBatch,
     reset,
   }
 })

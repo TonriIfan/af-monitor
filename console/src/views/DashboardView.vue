@@ -6,11 +6,6 @@
         <h3>{{ scopeTitle }}</h3>
         <p>{{ scopeDescription }}</p>
       </div>
-      <div class="hero-panel__chips">
-        <el-tag effect="plain">多账号管理</el-tag>
-        <el-tag effect="plain">按账号切换数据视角</el-tag>
-        <el-tag effect="plain">管理员可查看全局</el-tag>
-      </div>
     </section>
 
     <section class="stats-row">
@@ -20,30 +15,30 @@
       <StatCard eyebrow="未读告警" :value="overview.counts.unread_alerts" hint="等待处理的事件" icon="Warning" />
     </section>
 
-    <section class="content-columns">
-      <article class="panel" v-if="auth.user?.role === 'admin'">
-        <div class="panel__header">
-          <div>
-            <p class="section-eyebrow">Account overview</p>
-            <h3>账号总览</h3>
-          </div>
+    <article class="panel" v-if="auth.user?.role === 'admin'">
+      <div class="panel__header">
+        <div>
+          <p class="section-eyebrow">Account overview</p>
+          <h3>账号总览</h3>
         </div>
-        <p class="panel__helper">地图会根据最近登录 IP 的地理信息落点，统计用户在全国范围内的分布。</p>
-        <div class="account-overview-layout">
-          <ChinaLoginMap :users="overview.user_summaries" />
-          <div class="account-overview-table">
-            <el-table :data="provinceDistribution" stripe>
-              <el-table-column prop="province" label="省级行政区" min-width="160" />
-              <el-table-column prop="user_count" label="用户数" min-width="90" />
-              <el-table-column prop="admin_count" label="管理员" min-width="90" />
-              <el-table-column prop="device_count" label="设备数" min-width="90" />
-              <el-table-column prop="measurement_count" label="测量数" min-width="100" />
-              <el-table-column prop="unread_alert_count" label="未读告警" min-width="100" />
-            </el-table>
-          </div>
+      </div>
+      <p class="panel__helper">地图会根据最近登录 IP 的地理信息落点，统计用户在全国范围内的分布。</p>
+      <div class="account-overview-layout">
+        <ChinaLoginMap :users="accountOverviewUsers" />
+        <div class="account-overview-table">
+          <el-table :data="provinceDistribution" stripe>
+            <el-table-column prop="province" label="省级行政区" min-width="160" />
+            <el-table-column prop="user_count" label="用户数" min-width="90" />
+            <el-table-column prop="admin_count" label="管理员" min-width="90" />
+            <el-table-column prop="device_count" label="设备数" min-width="90" />
+            <el-table-column prop="measurement_count" label="测量数" min-width="100" />
+            <el-table-column prop="unread_alert_count" label="未读告警" min-width="100" />
+          </el-table>
         </div>
-      </article>
+      </div>
+    </article>
 
+    <section class="content-columns">
       <article class="panel">
         <div class="panel__header">
           <div>
@@ -142,6 +137,13 @@ const maxRiskTotal = computed(() =>
   overview.risk_distribution.reduce((max, item) => Math.max(max, item.total), 0),
 )
 
+const accountOverviewUsers = computed(() => {
+  if (auth.user?.role === 'admin') {
+    return management.users
+  }
+  return overview.user_summaries
+})
+
 const provinceAliases: Record<string, string> = {
   Beijing: '北京市',
   Tianjin: '天津市',
@@ -206,7 +208,7 @@ const provinceDistribution = computed(() => {
     }
   >()
 
-  for (const user of overview.user_summaries) {
+  for (const user of accountOverviewUsers.value) {
     const province = normalizeProvince(user.last_login_location?.region, user.last_login_location?.country)
     const entry = grouped.get(province) || {
       province,

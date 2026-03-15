@@ -2,7 +2,8 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth import authenticate
 from rest_framework import serializers
 
-from .location import build_login_location_payload
+from .demo_data import random_china_login_context, random_cn_name
+from .location import build_login_location_payload, location_from_login_context
 
 User = get_user_model()
 
@@ -72,6 +73,8 @@ class UserSummarySerializer(serializers.ModelSerializer):
 class UserCreateSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, min_length=8)
     role = serializers.ChoiceField(choices=User.Role.choices, default=User.Role.USER)
+    generate_china_location = serializers.BooleanField(write_only=True, required=False, default=False)
+    login_context = LoginContextSerializer(required=False)
 
     class Meta:
         model = User
@@ -83,6 +86,8 @@ class UserCreateSerializer(serializers.ModelSerializer):
             'last_name',
             'role',
             'is_active',
+            'generate_china_location',
+            'login_context',
         ]
         extra_kwargs = {
             'email': {'required': False, 'allow_blank': True},
@@ -93,9 +98,72 @@ class UserCreateSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         password = validated_data.pop('password')
+        generate_china_location = validated_data.pop('generate_china_location', False)
+        login_context = validated_data.pop('login_context', None)
         user = User(**validated_data)
         user.is_staff = user.role == User.Role.ADMIN
         user.is_superuser = False
         user.set_password(password)
+        if generate_china_location:
+            login_context = login_context or random_china_login_context()
+        if login_context:
+            location = location_from_login_context(login_context)
+            user.last_login_ip = (login_context.get('ip') or '').strip()
+            user.last_login_country = location['country']
+            user.last_login_region = location['region']
+            user.last_login_city = location['city']
+            user.last_login_latitude = location['latitude']
+            user.last_login_longitude = location['longitude']
         user.save()
         return user
+
+
+class UserBatchCreateSerializer(serializers.Serializer):
+    count = serializers.IntegerField(min_value=1, max_value=100)
+    username_prefix = serializers.CharField(max_length=32, default='demo-user')
+    password = serializers.CharField(min_length=8, default='demo12345')
+    role = serializers.ChoiceField(choices=User.Role.choices, default=User.Role.USER)
+    is_active = serializers.BooleanField(required=False, default=True)
+    generate_china_location = serializers.BooleanField(required=False, default=True)
+    generate_profile = serializers.BooleanField(required=False, default=True)
+    email_domain = serializers.CharField(max_length=128, required=False, allow_blank=True, default='example.com')
+
+    def create_users(self):
+        payload = self.validated_data
+        existing_count = User.objects.filter(username__startswith=payload['username_prefix']).count()
+        created_users = []
+
+        for index in range(1, payload['count'] + 1):
+            sequence = existing_count + index
+            username = f"{payload['username_prefix']}{sequence:03d}"
+            last_name = ''
+            first_name = ''
+            if payload['generate_profile']:
+                last_name, first_name = random_cn_name()
+            email = ''
+            if payload['email_domain']:
+                email = f"{username}@{payload['email_domain']}"
+
+            serializer = UserCreateSerializer(
+                data={
+                    'username': username,
+                    'password': payload['password'],
+                    'email': email,
+                    'first_name': first_name,
+                    'last_name': last_name,
+                    'role': payload['role'],
+                    'is_active': payload['is_active'],
+                    'generate_china_location': payload['generate_china_location'],
+                }
+            )
+            serializer.is_valid(raise_exception=True)
+            created_users.append(serializer.save())
+
+        return created_users
+
+
+class UserBatchDeleteSerializer(serializers.Serializer):
+    user_ids = serializers.ListField(
+        child=serializers.IntegerField(min_value=1),
+        allow_empty=False,
+    )

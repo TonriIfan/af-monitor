@@ -4,10 +4,18 @@ from rest_framework import permissions, status
 from rest_framework.authtoken.models import Token
 from rest_framework.authtoken.views import ObtainAuthToken
 from rest_framework.generics import ListCreateAPIView
+from rest_framework.views import APIView
+from rest_framework.generics import DestroyAPIView
 from rest_framework.response import Response
 
 from .location import apply_login_location, build_login_location_payload
-from .serializers import LoginSerializer, UserCreateSerializer, UserSummarySerializer
+from .serializers import (
+    LoginSerializer,
+    UserBatchCreateSerializer,
+    UserBatchDeleteSerializer,
+    UserCreateSerializer,
+    UserSummarySerializer,
+)
 
 User = get_user_model()
 
@@ -127,3 +135,61 @@ class UserManagementView(ListCreateAPIView):
             context={'request': request},
         )
         return Response(summary.data, status=status.HTTP_201_CREATED)
+
+
+class UserBatchCreateView(APIView):
+    permission_classes = [permissions.IsAdminUser]
+
+    def post(self, request):
+        serializer = UserBatchCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        users = serializer.create_users()
+        queryset = (
+            User.objects.filter(pk__in=[user.pk for user in users])
+            .annotate(
+                device_count=Count('device_bindings__device', filter=Q(device_bindings__is_active=True), distinct=True),
+                measurement_count=Count('measurements', distinct=True),
+                alert_count=Count('alerts', distinct=True),
+                unread_alert_count=Count('alerts', filter=Q(alerts__status='unread'), distinct=True),
+                latest_activity_at=Max('measurements__measured_at'),
+            )
+            .order_by('username')
+        )
+        return Response(UserSummarySerializer(queryset, many=True).data, status=status.HTTP_201_CREATED)
+
+
+class UserDetailView(DestroyAPIView):
+    permission_classes = [permissions.IsAdminUser]
+    queryset = User.objects.all()
+
+    def destroy(self, request, *args, **kwargs):
+        user = self.get_object()
+        if user.pk == request.user.pk:
+            return Response({'detail': '不能删除当前登录账号。'}, status=status.HTTP_400_BAD_REQUEST)
+        username = user.username
+        self.perform_destroy(user)
+        return Response({'deleted': True, 'username': username}, status=status.HTTP_200_OK)
+
+
+class UserBatchDeleteView(APIView):
+    permission_classes = [permissions.IsAdminUser]
+
+    def post(self, request):
+        serializer = UserBatchDeleteSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user_ids = set(serializer.validated_data['user_ids'])
+        if request.user.pk in user_ids:
+            return Response({'detail': '批量删除中不能包含当前登录账号。'}, status=status.HTTP_400_BAD_REQUEST)
+
+        queryset = User.objects.filter(pk__in=user_ids)
+        usernames = list(queryset.values_list('username', flat=True))
+        deleted_count = queryset.count()
+        queryset.delete()
+        return Response(
+            {
+                'deleted': True,
+                'deleted_count': deleted_count,
+                'usernames': usernames,
+            },
+            status=status.HTTP_200_OK,
+        )

@@ -100,13 +100,66 @@ class UserManagementApiTests(APITestCase):
                 'email': 'patient@example.com',
                 'first_name': 'Patient',
                 'last_name': 'B',
-                'is_staff': False,
                 'is_active': True,
+                'generate_china_location': True,
             },
             format='json',
         )
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertTrue(get_user_model().objects.filter(username='patient-b').exists())
+        user = get_user_model().objects.get(username='patient-b')
+        self.assertEqual(user.last_login_country, 'China')
+        self.assertTrue(user.last_login_ip)
+
+    def test_admin_can_batch_create_users(self):
+        response = self.client.post(
+            '/api/v1/auth/users/batch',
+            {
+                'count': 3,
+                'username_prefix': 'patient',
+                'password': 'pass12345',
+                'role': 'user',
+                'generate_china_location': True,
+                'generate_profile': True,
+                'email_domain': 'demo.local',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(len(response.data), 3)
+        created_users = get_user_model().objects.filter(username__startswith='patient')
+        self.assertEqual(created_users.count(), 3)
+        self.assertTrue(all(user.last_login_country == 'China' for user in created_users))
+
+    def test_admin_can_delete_user(self):
+        user = get_user_model().objects.create_user(username='patient-c', password='pass12345')
+
+        response = self.client.delete(f'/api/v1/auth/users/{user.pk}')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertFalse(get_user_model().objects.filter(pk=user.pk).exists())
+
+    def test_admin_cannot_delete_self(self):
+        response = self.client.delete(f'/api/v1/auth/users/{self.admin.pk}')
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_admin_can_batch_delete_users(self):
+        users = [
+            get_user_model().objects.create_user(username='remove-a', password='pass12345'),
+            get_user_model().objects.create_user(username='remove-b', password='pass12345'),
+        ]
+
+        response = self.client.post(
+            '/api/v1/auth/users/batch-delete',
+            {'user_ids': [user.pk for user in users]},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['deleted_count'], 2)
+        self.assertFalse(get_user_model().objects.filter(username__in=['remove-a', 'remove-b']).exists())
 
 # Create your tests here.
