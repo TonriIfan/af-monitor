@@ -4,7 +4,7 @@ from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 
 from monitoring.serializers import DeviceStatusSerializer
-from monitoring.services import get_device_status_payload
+from monitoring.services import devices_queryset_for_scope, get_device_status_payload, scope_user_for_request
 
 from .models import Device, DeviceBinding
 from .serializers import DeviceBindSerializer, DeviceBindingSerializer, DeviceListSerializer
@@ -15,12 +15,18 @@ class DeviceListView(generics.ListAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
+        scope_user = scope_user_for_request(self.request)
         return (
-            Device.objects.filter(bindings__user=self.request.user, bindings__is_active=True)
+            devices_queryset_for_scope(scope_user)
             .prefetch_related(
                 Prefetch(
                     'bindings',
-                    queryset=DeviceBinding.objects.filter(user=self.request.user, is_active=True),
+                    queryset=DeviceBinding.objects.select_related('user').filter(
+                        is_active=True,
+                        user=scope_user,
+                    )
+                    if scope_user is not None
+                    else DeviceBinding.objects.select_related('user').filter(is_active=True),
                     to_attr='active_binding_list',
                 )
             )
@@ -46,7 +52,7 @@ class DeviceBindView(generics.CreateAPIView):
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(
             data=request.data,
-            context={'request': request},
+            context={'request': request, 'scope_user': scope_user_for_request(request)},
         )
         serializer.is_valid(raise_exception=True)
         binding = serializer.save()
@@ -62,8 +68,9 @@ class DeviceStatusView(generics.RetrieveAPIView):
     lookup_url_kwarg = 'device_id'
 
     def get_object(self):
+        scope_user = scope_user_for_request(self.request)
         device = get_object_or_404(
-            Device.objects.filter(bindings__user=self.request.user, bindings__is_active=True).distinct(),
+            devices_queryset_for_scope(scope_user),
             device_id=self.kwargs[self.lookup_url_kwarg],
         )
-        return get_device_status_payload(device, self.request.user)
+        return get_device_status_payload(device, scope_user)

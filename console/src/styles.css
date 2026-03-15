@@ -167,6 +167,16 @@ select {
   gap: 1rem;
 }
 
+.console-topbar__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.scope-select {
+  width: min(320px, 55vw);
+}
+
 .console-topbar h2 {
   margin: 0.35rem 0 0;
   font-size: clamp(1.9rem, 3vw, 2.8rem);
@@ -265,6 +275,11 @@ select {
 
 .panel--dense {
   align-content: start;
+}
+
+.panel__helper {
+  margin: 0 0 1rem;
+  color: var(--muted);
 }
 
 .filter-row {

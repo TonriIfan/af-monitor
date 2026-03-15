@@ -29,6 +29,9 @@
             <h3>设备清单</h3>
           </div>
         </div>
+        <p class="panel__helper" v-if="auth.user?.is_staff">
+          当前视角：{{ management.selectedUser ? `${management.selectedUser.username} 的设备` : '全部账号设备' }}
+        </p>
         <div class="device-grid" v-if="devices.length">
           <div v-for="device in devices" :key="device.device_id" class="device-tile">
             <div class="device-tile__header">
@@ -37,6 +40,7 @@
             </div>
             <p>{{ device.device_id }}</p>
             <div class="device-tile__meta">
+              <span v-if="auth.user?.is_staff">所属账号：{{ device.owner_username || '--' }}</span>
               <span>别名：{{ device.alias || '--' }}</span>
               <span>未读告警：{{ device.unread_alerts }}</span>
               <span>最近测量：{{ formatDateTime(device.latest_measurement_at) }}</span>
@@ -50,12 +54,16 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 
+import { useAuthStore } from '../stores/auth'
+import { useManagementStore } from '../stores/management'
 import { api } from '../utils/api'
 import { formatDateTime } from '../utils/format'
 
+const auth = useAuthStore()
+const management = useManagementStore()
 const devices = ref<Array<Record<string, any>>>([])
 const submitting = ref(false)
 const form = reactive({
@@ -66,7 +74,9 @@ const form = reactive({
 
 async function loadDevices() {
   try {
-    const { data } = await api.get('/devices/')
+    const { data } = await api.get('/devices/', {
+      params: auth.user?.is_staff ? management.scopeParams() : {},
+    })
     devices.value = data
   } catch {
     ElMessage.error('设备列表加载失败。')
@@ -80,7 +90,10 @@ async function submitBind() {
   }
   submitting.value = true
   try {
-    await api.post('/devices/bind', form)
+    await api.post('/devices/bind', {
+      ...form,
+      ...(auth.user?.is_staff ? management.scopeParams() : {}),
+    })
     ElMessage.success('设备绑定成功。')
     form.device_id = ''
     form.name = ''
@@ -94,4 +107,5 @@ async function submitBind() {
 }
 
 onMounted(loadDevices)
+watch(() => management.selectedUserId, loadDevices)
 </script>

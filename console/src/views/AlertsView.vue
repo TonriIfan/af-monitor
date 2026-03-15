@@ -8,8 +8,12 @@
         </div>
         <el-button @click="loadAlerts">刷新</el-button>
       </div>
+      <p class="panel__helper" v-if="auth.user?.is_staff">
+        当前视角：{{ management.selectedUser ? `${management.selectedUser.username} 的告警` : '全部账号告警' }}
+      </p>
 
       <el-table :data="alerts" stripe>
+        <el-table-column v-if="auth.user?.is_staff" prop="username" label="账号" min-width="120" />
         <el-table-column prop="device_id" label="设备" min-width="130" />
         <el-table-column prop="title" label="标题" min-width="180" />
         <el-table-column label="等级" min-width="120">
@@ -43,17 +47,23 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 
+import { useAuthStore } from '../stores/auth'
+import { useManagementStore } from '../stores/management'
 import { api } from '../utils/api'
 import { formatDateTime, riskLabel, riskTagType } from '../utils/format'
 
+const auth = useAuthStore()
+const management = useManagementStore()
 const alerts = ref<Array<Record<string, any>>>([])
 
 async function loadAlerts() {
   try {
-    const { data } = await api.get('/alerts')
+    const { data } = await api.get('/alerts', {
+      params: auth.user?.is_staff ? management.scopeParams() : {},
+    })
     alerts.value = data
   } catch {
     ElMessage.error('告警列表加载失败。')
@@ -71,4 +81,5 @@ async function markRead(id: number) {
 }
 
 onMounted(loadAlerts)
+watch(() => management.selectedUserId, loadAlerts)
 </script>

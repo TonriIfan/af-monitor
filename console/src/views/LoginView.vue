@@ -1,8 +1,8 @@
 <template>
   <div class="login-page">
     <section class="login-hero">
-      <p class="login-hero__eyebrow">Atrial Fibrillation Monitoring</p>
-      <h1>一个后端控制台，串起设备、解析、预警和论文演示。</h1>
+      <p class="login-hero__eyebrow">Tao Yifan Atrial Fibrillation Monitoring</p>
+      <h1>房颤控制面板</h1>
       <p class="login-hero__copy">
         这个界面不替代你的移动端，而是为后端展示提供一个清晰、可讲述、可验收的操作面板。
       </p>

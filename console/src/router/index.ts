@@ -16,6 +16,7 @@ const router = createRouter({
       component: () => import('../layouts/ConsoleLayout.vue'),
       children: [
         { path: '', redirect: '/dashboard' },
+        { path: 'accounts', name: 'accounts', component: () => import('../views/AccountsView.vue') },
         { path: 'dashboard', name: 'dashboard', component: () => import('../views/DashboardView.vue') },
         { path: 'devices', name: 'devices', component: () => import('../views/DevicesView.vue') },
         { path: 'measurements', name: 'measurements', component: () => import('../views/MeasurementsView.vue') },
@@ -35,6 +36,9 @@ router.beforeEach((to) => {
   }
   if (!auth.isAuthenticated) {
     return `/login?redirect=${encodeURIComponent(to.fullPath)}`
+  }
+  if (to.path === '/accounts' && !auth.user?.is_staff) {
+    return '/dashboard'
   }
   return true
 })

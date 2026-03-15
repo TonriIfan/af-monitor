@@ -20,6 +20,8 @@ class PacketIngestSerializer(serializers.Serializer):
 
 class MeasurementSerializer(serializers.ModelSerializer):
     device_id = serializers.CharField(source='device.device_id', read_only=True)
+    user_id = serializers.IntegerField(source='user.id', read_only=True)
+    username = serializers.CharField(source='user.username', read_only=True, default='')
     raw_payload = serializers.JSONField(source='raw_packet.raw_payload', read_only=True)
     analysis = serializers.SerializerMethodField()
     alert_state = serializers.SerializerMethodField()
@@ -29,6 +31,8 @@ class MeasurementSerializer(serializers.ModelSerializer):
         fields = [
             'id',
             'device_id',
+            'user_id',
+            'username',
             'measured_at',
             'packet_kind',
             'raw_payload',
@@ -71,12 +75,16 @@ class MeasurementSerializer(serializers.ModelSerializer):
 class AlertSerializer(serializers.ModelSerializer):
     device_id = serializers.CharField(source='device.device_id', read_only=True)
     measurement_id = serializers.IntegerField(source='measurement.id', read_only=True)
+    user_id = serializers.IntegerField(source='user.id', read_only=True)
+    username = serializers.CharField(source='user.username', read_only=True, default='')
 
     class Meta:
         model = AlertEvent
         fields = [
             'id',
             'device_id',
+            'user_id',
+            'username',
             'measurement_id',
             'level',
             'title',

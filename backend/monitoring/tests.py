@@ -126,4 +126,51 @@ class PacketIngestApiTests(APITestCase):
         self.assertEqual(response.data['counts']['measurements'], 1)
         self.assertGreaterEqual(response.data['counts']['alerts'], 1)
 
+    def test_staff_can_scope_dashboard_by_user(self):
+        other_user = get_user_model().objects.create_user(
+            username='other-user',
+            password='pass12345',
+        )
+        other_device = Device.objects.create(device_id='ring-002', source='wechat-miniapp')
+        DeviceBinding.objects.create(user=other_user, device=other_device)
+
+        self.client.post(
+            '/api/v1/packets',
+            {
+                'device_id': 'ring-001',
+                'client_time': '2026-03-15T14:31:00+08:00',
+                'source': 'wechat-miniapp',
+                'payload': {'frame_hex': '00 00 12 00 64'},
+            },
+            format='json',
+        )
+
+        admin = get_user_model().objects.create_user(
+            username='manager',
+            password='pass12345',
+            is_staff=True,
+            is_superuser=True,
+        )
+        admin_token = Token.objects.create(user=admin)
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {admin_token.key}')
+
+        self.client.post(
+            '/api/v1/packets',
+            {
+                'device_id': 'ring-002',
+                'client_time': '2026-03-15T14:32:00+08:00',
+                'source': 'wechat-miniapp',
+                'payload': {'frame_hex': '00 00 12 00 32'},
+            },
+            format='json',
+        )
+
+        global_response = self.client.get('/api/v1/dashboard/overview')
+        scoped_response = self.client.get(f'/api/v1/dashboard/overview?user_id={self.user.id}')
+
+        self.assertEqual(global_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(global_response.data['counts']['devices'], 2)
+        self.assertEqual(scoped_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(scoped_response.data['counts']['devices'], 1)
+
 # Create your tests here.

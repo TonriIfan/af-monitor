@@ -2,16 +2,14 @@
   <div class="page-grid">
     <section class="hero-panel">
       <div class="hero-panel__copy">
-        <p class="section-eyebrow">Operational pulse</p>
-        <h3>把设备状态、风险分布和最新事件放在同一屏里。</h3>
-        <p>
-          这个总览页面针对毕设讲解设计：老师一眼能看到系统在采什么、判了什么、有没有风险事件。
-        </p>
+        <p class="section-eyebrow">Management scope</p>
+        <h3>{{ scopeTitle }}</h3>
+        <p>{{ scopeDescription }}</p>
       </div>
       <div class="hero-panel__chips">
-        <el-tag effect="plain">Django + DRF</el-tag>
-        <el-tag effect="plain">Vue + Element Plus</el-tag>
-        <el-tag effect="plain">规则版风险筛查</el-tag>
+        <el-tag effect="plain">多账号管理</el-tag>
+        <el-tag effect="plain">按账号切换数据视角</el-tag>
+        <el-tag effect="plain">管理员可查看全局</el-tag>
       </div>
     </section>
 
@@ -91,14 +89,18 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive } from 'vue'
+import { computed, onMounted, reactive, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 
 import RiskBar from '../components/RiskBar.vue'
 import StatCard from '../components/StatCard.vue'
+import { useAuthStore } from '../stores/auth'
+import { useManagementStore } from '../stores/management'
 import { api } from '../utils/api'
 import { formatDateTime, riskLabel, riskTagType } from '../utils/format'
 
+const auth = useAuthStore()
+const management = useManagementStore()
 const overview = reactive({
   counts: {
     devices: 0,
@@ -115,9 +117,23 @@ const maxRiskTotal = computed(() =>
   overview.risk_distribution.reduce((max, item) => Math.max(max, item.total), 0),
 )
 
+const scopeTitle = computed(() => {
+  if (!auth.user?.is_staff) return '当前账号总览'
+  return management.selectedUser ? `正在查看 ${management.selectedUser.username} 的账号态势` : '正在查看全部账号态势'
+})
+
+const scopeDescription = computed(() => {
+  if (!auth.user?.is_staff) return '当前页只展示你自己的设备、测量和告警数据。'
+  return management.selectedUser
+    ? '下方所有统计、最新测量和最新告警，都已经切换到该账号的上下文。'
+    : '当前页展示所有账号汇总后的总体情况，适合管理员做全局巡检。'
+})
+
 async function loadOverview() {
   try {
-    const { data } = await api.get('/dashboard/overview')
+    const { data } = await api.get('/dashboard/overview', {
+      params: auth.user?.is_staff ? management.scopeParams() : {},
+    })
     Object.assign(overview, data)
   } catch {
     ElMessage.error('总览数据加载失败。')
@@ -125,4 +141,5 @@ async function loadOverview() {
 }
 
 onMounted(loadOverview)
+watch(() => management.selectedUserId, loadOverview)
 </script>

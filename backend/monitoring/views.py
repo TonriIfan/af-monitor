@@ -1,6 +1,5 @@
 import json
 
-from django.db.models import Count
 from django.shortcuts import get_object_or_404
 from django.utils.dateparse import parse_datetime
 from rest_framework import generics, permissions, status
@@ -15,7 +14,13 @@ from .serializers import (
     MeasurementSerializer,
     PacketIngestSerializer,
 )
-from .services import build_dashboard_overview, ingest_packet
+from .services import (
+    alerts_queryset_for_scope,
+    build_dashboard_overview,
+    ingest_packet,
+    measurements_queryset_for_scope,
+    scope_user_for_request,
+)
 
 
 class PacketIngestView(APIView):
@@ -41,11 +46,8 @@ class MeasurementListView(generics.ListAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        queryset = Measurement.objects.select_related(
-            'device',
-            'raw_packet',
-            'analysis_result',
-        ).filter(device__bindings__user=self.request.user, device__bindings__is_active=True).distinct()
+        scope_user = scope_user_for_request(self.request)
+        queryset = measurements_queryset_for_scope(scope_user).select_related('raw_packet')
 
         device_id = self.request.query_params.get('device_id')
         start = self.request.query_params.get('start')
@@ -69,11 +71,8 @@ class MeasurementLatestView(generics.RetrieveAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_object(self):
-        queryset = Measurement.objects.select_related(
-            'device',
-            'raw_packet',
-            'analysis_result',
-        ).filter(device__bindings__user=self.request.user, device__bindings__is_active=True).distinct()
+        scope_user = scope_user_for_request(self.request)
+        queryset = measurements_queryset_for_scope(scope_user).select_related('raw_packet')
         device_id = self.request.query_params.get('device_id')
         if device_id:
             queryset = queryset.filter(device__device_id=device_id)
@@ -92,11 +91,8 @@ class AlertListView(generics.ListAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        queryset = AlertEvent.objects.select_related(
-            'device',
-            'measurement',
-            'analysis_result',
-        ).filter(device__bindings__user=self.request.user, device__bindings__is_active=True).distinct()
+        scope_user = scope_user_for_request(self.request)
+        queryset = alerts_queryset_for_scope(scope_user)
         device_id = self.request.query_params.get('device_id')
         if device_id:
             queryset = queryset.filter(device__device_id=device_id)
@@ -107,8 +103,9 @@ class AlertReadView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, alert_id):
+        scope_user = scope_user_for_request(request)
         alert = get_object_or_404(
-            AlertEvent.objects.filter(device__bindings__user=request.user, device__bindings__is_active=True).distinct(),
+            alerts_queryset_for_scope(scope_user),
             id=alert_id,
         )
         serializer = AlertStateUpdateSerializer(instance=alert, data=request.data or {}, partial=True)
@@ -121,6 +118,6 @@ class DashboardOverviewView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        payload = build_dashboard_overview(request.user)
+        payload = build_dashboard_overview(scope_user_for_request(request))
         serializer = DashboardOverviewSerializer(payload)
         return Response(serializer.data)

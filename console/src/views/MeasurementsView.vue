@@ -11,8 +11,12 @@
           <el-button type="primary" @click="loadMeasurements">筛选</el-button>
         </div>
       </div>
+      <p class="panel__helper" v-if="auth.user?.is_staff">
+        当前视角：{{ management.selectedUser ? `${management.selectedUser.username} 的测量数据` : '全部账号测量数据' }}
+      </p>
 
       <el-table :data="measurements" stripe>
+        <el-table-column v-if="auth.user?.is_staff" prop="username" label="账号" min-width="120" />
         <el-table-column prop="device_id" label="设备" min-width="130" />
         <el-table-column prop="packet_kind" label="类型" min-width="120" />
         <el-table-column label="风险" min-width="120">
@@ -41,12 +45,16 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 
+import { useAuthStore } from '../stores/auth'
+import { useManagementStore } from '../stores/management'
 import { api } from '../utils/api'
 import { formatDateTime, riskLabel, riskTagType } from '../utils/format'
 
+const auth = useAuthStore()
+const management = useManagementStore()
 const filters = reactive({
   device_id: '',
 })
@@ -56,6 +64,7 @@ async function loadMeasurements() {
   try {
     const { data } = await api.get('/measurements', {
       params: {
+        ...(auth.user?.is_staff ? management.scopeParams() : {}),
         device_id: filters.device_id || undefined,
       },
     })
@@ -66,4 +75,5 @@ async function loadMeasurements() {
 }
 
 onMounted(loadMeasurements)
+watch(() => management.selectedUserId, loadMeasurements)
 </script>

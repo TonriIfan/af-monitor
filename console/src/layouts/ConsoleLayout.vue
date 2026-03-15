@@ -4,10 +4,14 @@
       <div class="brand-block">
         <p class="brand-block__eyebrow">YF MONITOR</p>
         <h1>Rhythm Console</h1>
-        <p class="brand-block__copy">面向毕设演示的一体化监测后台，聚焦设备、告警与节律趋势。</p>
+        <p class="brand-block__copy">一体化监测后台，聚焦设备、告警与节律趋势。</p>
       </div>
 
       <el-menu :default-active="route.path" class="console-nav" router>
+        <el-menu-item v-if="auth.user?.is_staff" index="/accounts">
+          <el-icon><User /></el-icon>
+          <span>账号</span>
+        </el-menu-item>
         <el-menu-item index="/dashboard">
           <el-icon><DataBoard /></el-icon>
           <span>总览</span>
@@ -42,6 +46,22 @@
           <h2>{{ title }}</h2>
         </div>
         <div class="console-topbar__actions">
+          <el-select
+            v-if="auth.user?.is_staff"
+            :model-value="management.selectedUserId"
+            class="scope-select"
+            clearable
+            placeholder="查看全部账号"
+            @change="handleScopeChange"
+          >
+            <el-option label="全部账号" value="" />
+            <el-option
+              v-for="item in management.users"
+              :key="item.id"
+              :label="`${item.username} · ${item.device_count}台设备`"
+              :value="String(item.id)"
+            />
+          </el-select>
           <el-tag type="warning" effect="dark">原始 JSON 保持不变</el-tag>
         </div>
       </header>
@@ -58,14 +78,17 @@ import { computed } from 'vue'
 import { RouterView, useRoute, useRouter } from 'vue-router'
 
 import { useAuthStore } from '../stores/auth'
+import { useManagementStore } from '../stores/management'
 
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+const management = useManagementStore()
 
 const title = computed(() => {
   const map: Record<string, string> = {
     '/dashboard': '监测总览',
+    '/accounts': '账号管理',
     '/devices': '设备编排',
     '/measurements': '测量明细',
     '/alerts': '告警中心',
@@ -75,6 +98,15 @@ const title = computed(() => {
 
 function handleLogout() {
   auth.logout()
+  management.reset()
   router.push('/login')
+}
+
+if (auth.user?.is_staff) {
+  management.loadUsers().catch(() => undefined)
+}
+
+function handleScopeChange(value: string) {
+  management.setSelectedUserId(value || '')
 }
 </script>

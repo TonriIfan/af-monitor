@@ -6,14 +6,18 @@ from decimal import Decimal
 from hashlib import sha1
 from typing import Any
 
-from django.db.models import Count
+from django.contrib.auth import get_user_model
 from django.db import transaction
+from django.db.models import Count
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
 from devices.models import Device
 
 from .models import AlertEvent, AnalysisResult, Measurement, RawPacket, UploadSession
+
+User = get_user_model()
 
 BATTERY_STATE_MAP = {
     0: '未充电',
@@ -410,16 +414,40 @@ def get_device_status_payload(device: Device, user) -> dict[str, Any]:
     }
 
 
-def build_dashboard_overview(user) -> dict[str, Any]:
-    base_measurements = Measurement.objects.select_related('device', 'analysis_result').filter(
-        device__bindings__user=user,
-        device__bindings__is_active=True,
-    ).distinct()
-    base_alerts = AlertEvent.objects.select_related('device').filter(
-        device__bindings__user=user,
-        device__bindings__is_active=True,
-    ).distinct()
-    devices = Device.objects.filter(bindings__user=user, bindings__is_active=True).distinct()
+def scope_user_for_request(request):
+    if request.user.is_staff:
+        requested_user_id = request.query_params.get('user_id') or request.data.get('user_id')
+        if requested_user_id:
+            return get_object_or_404(User, pk=requested_user_id)
+        return None
+    return request.user
+
+
+def measurements_queryset_for_scope(scope_user=None):
+    queryset = Measurement.objects.select_related('device', 'analysis_result', 'user')
+    if scope_user is None:
+        return queryset
+    return queryset.filter(device__bindings__user=scope_user, device__bindings__is_active=True).distinct()
+
+
+def alerts_queryset_for_scope(scope_user=None):
+    queryset = AlertEvent.objects.select_related('device', 'measurement', 'analysis_result', 'user')
+    if scope_user is None:
+        return queryset
+    return queryset.filter(device__bindings__user=scope_user, device__bindings__is_active=True).distinct()
+
+
+def devices_queryset_for_scope(scope_user=None):
+    queryset = Device.objects.all()
+    if scope_user is None:
+        return queryset.distinct()
+    return queryset.filter(bindings__user=scope_user, bindings__is_active=True).distinct()
+
+
+def build_dashboard_overview(scope_user=None) -> dict[str, Any]:
+    base_measurements = measurements_queryset_for_scope(scope_user)
+    base_alerts = alerts_queryset_for_scope(scope_user)
+    devices = devices_queryset_for_scope(scope_user)
 
     risk_distribution = list(
         base_measurements.values('analysis_result__risk_level')
@@ -431,6 +459,8 @@ def build_dashboard_overview(user) -> dict[str, Any]:
         {
             'id': item.id,
             'device_id': item.device.device_id,
+            'user_id': item.user_id,
+            'username': item.user.username if item.user else '',
             'measured_at': item.measured_at,
             'packet_kind': item.packet_kind,
             'parsed': item.parsed,
@@ -442,6 +472,8 @@ def build_dashboard_overview(user) -> dict[str, Any]:
         {
             'id': alert.id,
             'device_id': alert.device.device_id,
+            'user_id': alert.user_id,
+            'username': alert.user.username if alert.user else '',
             'level': alert.level,
             'title': alert.title,
             'status': alert.status,
