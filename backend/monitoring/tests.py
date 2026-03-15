@@ -192,4 +192,44 @@ class PacketIngestApiTests(APITestCase):
         self.assertEqual(scoped_response.status_code, status.HTTP_200_OK)
         self.assertEqual(scoped_response.data['counts']['devices'], 1)
 
+    def test_admin_accounts_are_excluded_from_global_monitoring_views(self):
+        admin = get_user_model().objects.create_user(
+            username='manager',
+            password='pass12345',
+            role=get_user_model().Role.ADMIN,
+            is_staff=True,
+            is_superuser=True,
+            last_login_ip='39.100.10.10',
+            last_login_country='China',
+            last_login_region='北京市',
+            last_login_city='北京市',
+            last_login_latitude=39.9042,
+            last_login_longitude=116.4074,
+        )
+        admin_device = Device.objects.create(device_id='ring-admin', source='wechat-miniapp')
+        DeviceBinding.objects.create(user=admin, device=admin_device)
+
+        admin_token = Token.objects.create(user=admin)
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {admin_token.key}')
+        self.client.post(
+            '/api/v1/packets',
+            {
+                'device_id': 'ring-admin',
+                'client_time': '2026-03-15T14:40:00+08:00',
+                'source': 'wechat-miniapp',
+                'payload': {'frame_hex': '00 00 12 00 64'},
+            },
+            format='json',
+        )
+
+        response = self.client.get('/api/v1/dashboard/overview')
+        measurements_response = self.client.get('/api/v1/measurements')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['counts']['devices'], 1)
+        self.assertEqual(len(response.data['user_summaries']), 1)
+        self.assertEqual(response.data['user_summaries'][0]['username'], self.user.username)
+        self.assertEqual(measurements_response.status_code, status.HTTP_200_OK)
+        self.assertTrue(all(item['username'] != 'manager' for item in measurements_response.data))
+
 # Create your tests here.

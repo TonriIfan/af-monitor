@@ -29,7 +29,6 @@
           <el-table :data="provinceDistribution" stripe>
             <el-table-column prop="province" label="省级行政区" min-width="160" />
             <el-table-column prop="user_count" label="用户数" min-width="90" />
-            <el-table-column prop="admin_count" label="管理员" min-width="90" />
             <el-table-column prop="device_count" label="设备数" min-width="90" />
             <el-table-column prop="measurement_count" label="测量数" min-width="100" />
             <el-table-column prop="unread_alert_count" label="未读告警" min-width="100" />
@@ -139,7 +138,7 @@ const maxRiskTotal = computed(() =>
 
 const accountOverviewUsers = computed(() => {
   if (auth.user?.role === 'admin') {
-    return management.users
+    return management.users.filter((item) => item.role !== 'admin')
   }
   return overview.user_summaries
 })
@@ -201,7 +200,6 @@ const provinceDistribution = computed(() => {
     {
       province: string
       user_count: number
-      admin_count: number
       device_count: number
       measurement_count: number
       unread_alert_count: number
@@ -213,13 +211,11 @@ const provinceDistribution = computed(() => {
     const entry = grouped.get(province) || {
       province,
       user_count: 0,
-      admin_count: 0,
       device_count: 0,
       measurement_count: 0,
       unread_alert_count: 0,
     }
     entry.user_count += 1
-    entry.admin_count += user.role === 'admin' ? 1 : 0
     entry.device_count += user.device_count
     entry.measurement_count += user.measurement_count
     entry.unread_alert_count += user.unread_alert_count

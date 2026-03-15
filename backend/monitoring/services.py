@@ -427,21 +427,27 @@ def scope_user_for_request(request):
 def measurements_queryset_for_scope(scope_user=None):
     queryset = Measurement.objects.select_related('device', 'analysis_result', 'user')
     if scope_user is None:
-        return queryset
+        return queryset.exclude(user__role=User.Role.ADMIN)
+    if getattr(scope_user, 'role', None) == User.Role.ADMIN:
+        return queryset.none()
     return queryset.filter(device__bindings__user=scope_user, device__bindings__is_active=True).distinct()
 
 
 def alerts_queryset_for_scope(scope_user=None):
     queryset = AlertEvent.objects.select_related('device', 'measurement', 'analysis_result', 'user')
     if scope_user is None:
-        return queryset
+        return queryset.exclude(user__role=User.Role.ADMIN)
+    if getattr(scope_user, 'role', None) == User.Role.ADMIN:
+        return queryset.none()
     return queryset.filter(device__bindings__user=scope_user, device__bindings__is_active=True).distinct()
 
 
 def devices_queryset_for_scope(scope_user=None):
     queryset = Device.objects.all()
     if scope_user is None:
-        return queryset.distinct()
+        return queryset.filter(bindings__user__role=User.Role.USER, bindings__is_active=True).distinct()
+    if getattr(scope_user, 'role', None) == User.Role.ADMIN:
+        return queryset.none()
     return queryset.filter(bindings__user=scope_user, bindings__is_active=True).distinct()
 
 
@@ -450,9 +456,9 @@ def build_dashboard_overview(scope_user=None) -> dict[str, Any]:
     base_alerts = alerts_queryset_for_scope(scope_user)
     devices = devices_queryset_for_scope(scope_user)
     user_queryset = (
-        User.objects.all()
+        User.objects.filter(role=User.Role.USER)
         if scope_user is None
-        else User.objects.filter(pk=scope_user.pk)
+        else User.objects.filter(pk=scope_user.pk).exclude(role=User.Role.ADMIN)
     ).annotate(
         device_count=Count('device_bindings__device', filter=Q(device_bindings__is_active=True), distinct=True),
         measurement_count=Count('measurements', distinct=True),

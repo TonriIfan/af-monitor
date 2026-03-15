@@ -16,7 +16,13 @@
       </p>
 
       <el-table :data="measurements" stripe>
-        <el-table-column v-if="auth.user?.role === 'admin'" prop="username" label="账号" min-width="120" />
+        <el-table-column v-if="auth.user?.role === 'admin'" label="账号" min-width="160">
+          <template #default="{ row }">
+            <el-button link type="primary" @click="focusUser(row.user_id, row.username)">
+              {{ row.username || '--' }}
+            </el-button>
+          </template>
+        </el-table-column>
         <el-table-column prop="device_id" label="设备" min-width="130" />
         <el-table-column prop="packet_kind" label="类型" min-width="120" />
         <el-table-column label="风险" min-width="120">
@@ -59,6 +65,12 @@ const filters = reactive({
   device_id: '',
 })
 const measurements = ref<Array<Record<string, any>>>([])
+
+function focusUser(userId?: number, username?: string) {
+  if (!userId) return
+  management.setSelectedUserId(String(userId))
+  ElMessage.success(`已切换到 ${username || '该账号'} 的测量视角。`)
+}
 
 async function loadMeasurements() {
   try {
