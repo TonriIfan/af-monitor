@@ -70,6 +70,42 @@ class LoginApiTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
+    def test_register_creates_normal_user_and_profile(self):
+        response = self.client.post(
+            '/api/v1/auth/register',
+            {
+                'username': 'new-patient',
+                'password': 'pass12345',
+                'email': 'new-patient@example.com',
+                'first_name': '芳婷',
+                'last_name': '陈',
+                'login_context': {
+                    'ip': '202.96.64.68',
+                    'city': '广州市',
+                    'region': '广东省',
+                    'country_name': 'China',
+                    'latitude': 23.1291,
+                    'longitude': 113.2644,
+                },
+                'profile': {
+                    'phone': '13800138000',
+                    'age': 61,
+                    'sex': 'female',
+                    'notes': '有心悸史',
+                },
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertIn('token', response.data)
+        user = get_user_model().objects.get(username='new-patient')
+        self.assertEqual(user.role, get_user_model().Role.USER)
+        self.assertFalse(user.is_staff)
+        self.assertEqual(user.last_login_city, '广州市')
+        self.assertEqual(user.patient_profile.phone, '13800138000')
+        self.assertEqual(user.patient_profile.full_name, '陈芳婷')
+
 
 class UserManagementApiTests(APITestCase):
     def setUp(self):

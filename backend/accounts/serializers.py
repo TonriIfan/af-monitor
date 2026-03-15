@@ -4,6 +4,7 @@ from rest_framework import serializers
 
 from .demo_data import random_china_login_context, random_cn_name
 from .location import build_login_location_payload, location_from_login_context
+from .models import PatientProfile
 
 User = get_user_model()
 
@@ -34,6 +35,75 @@ class LoginSerializer(serializers.Serializer):
             raise serializers.ValidationError('用户名或密码错误。')
         attrs['user'] = user
         return attrs
+
+
+class PatientProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PatientProfile
+        fields = [
+            'full_name',
+            'phone',
+            'age',
+            'sex',
+            'notes',
+        ]
+
+
+class RegisterSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True, min_length=8)
+    login_context = LoginContextSerializer(required=False)
+    profile = PatientProfileSerializer(required=False)
+
+    class Meta:
+        model = User
+        fields = [
+            'username',
+            'password',
+            'email',
+            'first_name',
+            'last_name',
+            'login_context',
+            'profile',
+        ]
+        extra_kwargs = {
+            'email': {'required': False, 'allow_blank': True},
+            'first_name': {'required': False, 'allow_blank': True},
+            'last_name': {'required': False, 'allow_blank': True},
+        }
+
+    def create(self, validated_data):
+        password = validated_data.pop('password')
+        login_context = validated_data.pop('login_context', None)
+        profile_data = validated_data.pop('profile', None) or {}
+
+        user = User(**validated_data)
+        user.role = User.Role.USER
+        user.is_staff = False
+        user.is_superuser = False
+        user.is_active = True
+        user.set_password(password)
+
+        if login_context:
+            location = location_from_login_context(login_context)
+            user.last_login_ip = (login_context.get('ip') or '').strip()
+            user.last_login_country = location['country']
+            user.last_login_region = location['region']
+            user.last_login_city = location['city']
+            user.last_login_latitude = location['latitude']
+            user.last_login_longitude = location['longitude']
+
+        user.save()
+
+        full_name = profile_data.get('full_name') or ''.join([part for part in [user.last_name, user.first_name] if part])
+        PatientProfile.objects.create(
+            user=user,
+            full_name=full_name,
+            phone=profile_data.get('phone', ''),
+            age=profile_data.get('age'),
+            sex=profile_data.get('sex', ''),
+            notes=profile_data.get('notes', ''),
+        )
+        return user
 
 
 class UserSummarySerializer(serializers.ModelSerializer):

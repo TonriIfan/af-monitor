@@ -11,6 +11,7 @@ from rest_framework.response import Response
 from .location import apply_login_location, build_login_location_payload
 from .serializers import (
     LoginSerializer,
+    RegisterSerializer,
     UserBatchCreateSerializer,
     UserBatchDeleteSerializer,
     UserCreateSerializer,
@@ -25,6 +26,24 @@ def resolve_client_ip(request):
     if forwarded_for:
         return forwarded_for.split(',')[0].strip()
     return request.META.get('REMOTE_ADDR')
+
+
+def build_auth_payload(user, token_key: str) -> dict:
+    return {
+        'token': token_key,
+        'user': {
+            'id': user.id,
+            'username': user.username,
+            'email': user.email,
+            'first_name': user.first_name,
+            'last_name': user.last_name,
+            'role': user.role,
+            'is_staff': user.is_staff,
+            'is_superuser': user.is_superuser,
+            'last_login_ip': user.last_login_ip,
+            'last_login_location': build_login_location_payload(user),
+        },
+    }
 
 
 class LoginView(ObtainAuthToken):
@@ -44,24 +63,7 @@ class LoginView(ObtainAuthToken):
             serializer.validated_data.get('login_context'),
         )
         token, _ = Token.objects.get_or_create(user=user)
-        return Response(
-            {
-                'token': token.key,
-                'user': {
-                    'id': user.id,
-                    'username': user.username,
-                    'email': user.email,
-                    'first_name': user.first_name,
-                    'last_name': user.last_name,
-                    'role': user.role,
-                    'is_staff': user.is_staff,
-                    'is_superuser': user.is_superuser,
-                    'last_login_ip': user.last_login_ip,
-                    'last_login_location': build_login_location_payload(user),
-                },
-            },
-            status=status.HTTP_200_OK,
-        )
+        return Response(build_auth_payload(user, token.key), status=status.HTTP_200_OK)
 
 
 class ConsoleLoginView(LoginView):
@@ -85,24 +87,18 @@ class ConsoleLoginView(LoginView):
             serializer.validated_data.get('login_context'),
         )
         token, _ = Token.objects.get_or_create(user=user)
-        return Response(
-            {
-                'token': token.key,
-                'user': {
-                    'id': user.id,
-                    'username': user.username,
-                    'email': user.email,
-                    'first_name': user.first_name,
-                    'last_name': user.last_name,
-                    'role': user.role,
-                    'is_staff': user.is_staff,
-                    'is_superuser': user.is_superuser,
-                    'last_login_ip': user.last_login_ip,
-                    'last_login_location': build_login_location_payload(user),
-                },
-            },
-            status=status.HTTP_200_OK,
-        )
+        return Response(build_auth_payload(user, token.key), status=status.HTTP_200_OK)
+
+
+class RegisterView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        serializer = RegisterSerializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        token, _ = Token.objects.get_or_create(user=user)
+        return Response(build_auth_payload(user, token.key), status=status.HTTP_201_CREATED)
 
 
 class UserManagementView(ListCreateAPIView):
