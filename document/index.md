@@ -66,7 +66,7 @@ features:
 ## 本地运行
 
 ```powershell
-cd G:\bishe\yf-monitor\document
+cd yf-monitor\document
 npm install
 npm run docs:dev
 ```
@@ -74,6 +74,6 @@ npm run docs:dev
 生产构建：
 
 ```powershell
-cd G:\bishe\yf-monitor\document
+cd yf-monitor\document
 npm run docs:build
 ```

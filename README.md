@@ -35,14 +35,14 @@ yf-monitor/
 ### 1. 启动后端
 
 ```powershell
-cd G:\bishe\yf-monitor\backend
+cd yf-monitor\backend
 ..\.venv\Scripts\python manage.py runserver
 ```
 
 如果是第一次启动：
 
 ```powershell
-cd G:\bishe\yf-monitor\backend
+cd yf-monitor\backend
 ..\.venv\Scripts\python manage.py migrate
 ..\.venv\Scripts\python manage.py seed_demo_admin
 ..\.venv\Scripts\python manage.py runserver
@@ -56,7 +56,7 @@ cd G:\bishe\yf-monitor\backend
 ### 2. 启动控制台
 
 ```powershell
-cd G:\bishe\yf-monitor\console
+cd yf-monitor\console
 npm install
 Copy-Item .env.example .env
 npm run dev

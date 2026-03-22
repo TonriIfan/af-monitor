@@ -56,7 +56,7 @@ cd backend
 ### 2.2 常用命令
 
 ```powershell
-cd G:\bishe\yf-monitor\backend
+cd yf-monitor\backend
 ..\.venv\Scripts\python manage.py runserver
 ..\.venv\Scripts\python manage.py test
 ..\.venv\Scripts\python manage.py check

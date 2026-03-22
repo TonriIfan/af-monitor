@@ -1,3 +1,5 @@
 .venv/
 .claude/
 study/
+.claude/
+claude.md

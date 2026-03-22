@@ -50,7 +50,7 @@
 ### 2.1 安装依赖
 
 ```powershell
-cd G:\bishe\yf-monitor\console
+cd yf-monitor\console
 npm install
 ```
 
@@ -83,7 +83,7 @@ npm run dev
 
 默认访问地址：
 
-- `http://127.0.0.1:5173`
+- `http://127.0.0.1:3000`
 
 ### 2.4 构建生产包
 
@@ -104,7 +104,7 @@ npm run build
 推荐启动方式：
 
 ```powershell
-cd G:\bishe\yf-monitor\backend
+cd yf-monitor\backend
 ..\.venv\Scripts\python manage.py migrate
 ..\.venv\Scripts\python manage.py seed_demo_admin
 ..\.venv\Scripts\python manage.py runserver
@@ -510,7 +510,7 @@ api.interceptors.request.use((config) => {
 建议直接执行：
 
 ```powershell
-cd G:\bishe\yf-monitor\backend
+cd yf-monitor\backend
 ..\.venv\Scripts\python manage.py seed_demo_admin
 ```
 

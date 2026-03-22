@@ -28,7 +28,7 @@
 在项目根目录下执行：
 
 ```powershell
-cd G:\bishe\yf-monitor\backend
+cd yf-monitor\backend
 ..\.venv\Scripts\python manage.py generate_mock_monitoring_data
 ```
 

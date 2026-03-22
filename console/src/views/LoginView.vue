@@ -1,31 +1,31 @@
 <template>
   <div class="login-page">
     <section class="login-hero">
-      <p class="login-hero__eyebrow">Tao Yifan Atrial Fibrillation Monitoring</p>
-      <h1>房颤控制面板</h1>
+      <p class="login-hero__eyebrow">HeartGuard Cardiac Monitoring</p>
+      <h1>心脏卫士</h1>
       <p class="login-hero__copy">
-        这个界面不替代你的移动端，而是为后端展示提供一个清晰、可讲述、可验收的操作面板。
+        面向心脏健康监测与房颤风险筛查的后台入口，用于串联设备数据、测量结果、告警处置与演示讲解。
       </p>
       <div class="login-hero__grid">
         <div>
-          <strong>结构化</strong>
-          <span>原始包、解析字段、风险结果统一呈现</span>
+          <strong>数据贯通</strong>
+          <span>统一查看设备上报、解析字段、风险结果与原始记录</span>
         </div>
         <div>
-          <strong>即时性</strong>
-          <span>适合课堂答辩和现场演示告警链路</span>
+          <strong>响应及时</strong>
+          <span>快速感知异常趋势，便于联调、演示和复盘告警链路</span>
         </div>
         <div>
-          <strong>可扩展</strong>
-          <span>后续可继续接 App 端与 open-health 二期</span>
+          <strong>持续扩展</strong>
+          <span>为后续接入 App、AI 分析和更多监测场景预留统一入口</span>
         </div>
       </div>
     </section>
 
     <section class="login-card">
       <div class="login-card__header">
-        <p>控制台登录</p>
-        <h2>进入 Rhythm Console</h2>
+        <p>HeartGuard 控制台</p>
+        <h2>进入心脏卫士</h2>
       </div>
 
       <el-form :model="form" label-position="top" @submit.prevent="handleLogin">

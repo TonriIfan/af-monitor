@@ -2,9 +2,9 @@
   <div class="console-shell">
     <aside class="console-sidebar">
       <div class="brand-block">
-        <p class="brand-block__eyebrow">YF MONITOR</p>
-        <h1>Rhythm Console</h1>
-        <p class="brand-block__copy">一体化监测后台，聚焦设备、告警与节律趋势。</p>
+        <p class="brand-block__eyebrow">HEARTGUARD</p>
+        <h2>心脏卫士</h2>
+        <p class="brand-block__copy">心脏健康监测后台，聚焦设备管理、风险识别、告警联动与节律趋势追踪。</p>
       </div>
 
       <el-menu :default-active="route.path" class="console-nav" router>
@@ -46,7 +46,7 @@
     <main class="console-main">
       <header class="console-topbar">
         <div>
-          <p class="console-topbar__eyebrow">AF RISK SCREENING</p>
+          <p class="console-topbar__eyebrow">CARDIAC HEALTH MONITORING</p>
           <h2>{{ title }}</h2>
         </div>
         <div class="console-topbar__actions">
