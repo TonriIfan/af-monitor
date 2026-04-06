@@ -42,7 +42,7 @@ const props = defineProps<{
 }>()
 
 const MAP_NAME = 'yf-monitor-china'
-const MAP_URL = 'https://geo.datav.aliyun.com/areas_v3/bound/100000_full.json'
+const MAP_URL = '/maps/china.json'
 
 const chartRef = ref<HTMLDivElement | null>(null)
 const message = ref('')
