@@ -87,13 +87,18 @@ select {
 }
 
 .console-shell {
-  display: grid;
-  grid-template-columns: minmax(270px, 320px) 1fr;
+  --sidebar-width: clamp(270px, 22vw, 320px);
+  display: block;
   min-height: 100%;
 }
 
 .console-sidebar {
-  position: relative;
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 20;
+  width: var(--sidebar-width);
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   padding: clamp(1.2rem, 2vw, 2rem);
   border-right: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
@@ -109,6 +114,7 @@ select {
   width: 180px;
   aspect-ratio: 1;
   border-radius: 999px;
+  pointer-events: none;
   background: color-mix(in srgb, var(--accent) 16%, transparent);
   filter: blur(20px);
 }
@@ -123,6 +129,8 @@ select {
 }
 
 .brand-block {
+  position: relative;
+  z-index: 1;
   display: grid;
   gap: 0.9rem;
   margin-bottom: 2rem;
@@ -159,6 +167,9 @@ select {
 }
 
 .console-nav {
+  position: relative;
+  z-index: 1;
+  flex: 1;
   border: none;
   background: transparent;
 }
@@ -177,12 +188,13 @@ select {
 }
 
 .sidebar-footer {
-  position: absolute;
-  inset: auto 1.2rem 1.2rem 1.2rem;
+  position: relative;
+  z-index: 1;
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 1rem;
+  margin-top: auto;
   padding-top: 1rem;
   border-top: 1px solid var(--line);
 }
@@ -190,6 +202,8 @@ select {
 .console-main {
   display: grid;
   grid-template-rows: auto 1fr;
+  margin-left: var(--sidebar-width);
+  min-height: 100vh;
   padding: clamp(1rem, 2vw, 2rem);
   gap: 1rem;
 }
@@ -550,11 +564,17 @@ select {
 
   .console-sidebar {
     position: static;
+    inset: auto;
+    width: auto;
   }
 
   .sidebar-footer {
-    position: static;
     margin-top: 1.5rem;
+  }
+
+  .console-main {
+    margin-left: 0;
+    min-height: 0;
   }
 
   .stats-row {
