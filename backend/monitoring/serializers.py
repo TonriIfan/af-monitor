@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from .models import AiSettings, AlertEvent, Measurement, PushDeviceRegistration, SymptomFeedback
+from .models import AiSettings, AlertEvent, Measurement, PpgAnalysisRecord, PushDeviceRegistration, SymptomFeedback
 
 
 class PacketIngestSerializer(serializers.Serializer):
@@ -209,3 +209,52 @@ class PushDeviceRegistrationSerializer(serializers.ModelSerializer):
             'created_at',
         ]
         read_only_fields = ['id', 'last_seen_at', 'created_at']
+
+
+class PpgAnalyzeSerializer(serializers.Serializer):
+    user_id = serializers.IntegerField(required=False)
+    device_id = serializers.CharField(max_length=64)
+    collected_at = serializers.DateTimeField()
+    source = serializers.CharField(max_length=64, default='app_upload')
+    sample_rate_hz = serializers.FloatField(min_value=10, max_value=500)
+    samples = serializers.ListField(
+        child=serializers.FloatField(),
+        min_length=100,
+        allow_empty=False,
+    )
+
+    def validate(self, attrs):
+        sample_rate_hz = attrs['sample_rate_hz']
+        window_seconds = len(attrs['samples']) / sample_rate_hz if sample_rate_hz else 0
+        if window_seconds < 5:
+            raise serializers.ValidationError('PPG 窗口时长至少需要 5 秒。')
+        if window_seconds > 60:
+            raise serializers.ValidationError('PPG 窗口时长不能超过 60 秒。')
+        attrs['window_seconds'] = round(window_seconds, 2)
+        return attrs
+
+
+class PpgAnalysisRecordSerializer(serializers.ModelSerializer):
+    device_id = serializers.CharField(source='device.device_id', read_only=True)
+    user_id = serializers.IntegerField(source='user.id', read_only=True)
+
+    class Meta:
+        model = PpgAnalysisRecord
+        fields = [
+            'id',
+            'user_id',
+            'device_id',
+            'collected_at',
+            'source',
+            'sample_rate_hz',
+            'window_seconds',
+            'sample_count',
+            'quality_pass',
+            'quality_score',
+            'af_probability',
+            'af_label',
+            'model_version',
+            'model_source',
+            'features',
+            'created_at',
+        ]

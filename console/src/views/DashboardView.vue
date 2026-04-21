@@ -2,17 +2,16 @@
   <div class="page-grid">
     <section class="hero-panel">
       <div class="hero-panel__copy">
-        <p class="section-eyebrow">Management scope</p>
+        <p class="section-eyebrow">MONITORING SCOPE</p>
         <h3>{{ scopeTitle }}</h3>
-        <p>{{ scopeDescription }}</p>
       </div>
     </section>
 
     <section class="stats-row">
-      <StatCard eyebrow="设备数" :value="overview.counts.devices" hint="当前已绑定设备" icon="Cpu" />
-      <StatCard eyebrow="测量数" :value="overview.counts.measurements" hint="累计入库测量" icon="DataLine" />
-      <StatCard eyebrow="告警数" :value="overview.counts.alerts" hint="累计风险事件" icon="Bell" />
-      <StatCard eyebrow="未读告警" :value="overview.counts.unread_alerts" hint="等待处理的事件" icon="Warning" />
+      <StatCard eyebrow="设备总数" :value="overview.counts.devices" hint="已激活并绑定的监测终端" icon="" />
+      <StatCard eyebrow="测量记录" :value="overview.counts.measurements" hint="实时上报的数据包总量" icon="" />
+      <StatCard eyebrow="风险告警" :value="overview.counts.alerts" hint="系统识别的异常生理指标" icon="" />
+      <StatCard eyebrow="待办事件" :value="overview.counts.unread_alerts" hint="需要立即审核的未读告警" icon="" />
     </section>
 
     <article class="panel" v-if="auth.user?.role === 'admin'">
@@ -231,13 +230,6 @@ const provinceDistribution = computed(() => {
 const scopeTitle = computed(() => {
   if (auth.user?.role !== 'admin') return '当前账号总览'
   return management.selectedUser ? `正在查看 ${management.selectedUser.username} 的账号态势` : '正在查看全部账号态势'
-})
-
-const scopeDescription = computed(() => {
-  if (auth.user?.role !== 'admin') return '当前页只展示你自己的设备、测量和告警数据。'
-  return management.selectedUser
-    ? '下方所有统计、最新测量和最新告警，都已经切换到该账号的上下文。'
-    : '当前页展示所有账号汇总后的总体情况，适合管理员做全局巡检。'
 })
 
 async function loadOverview() {

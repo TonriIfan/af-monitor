@@ -1,127 +1,129 @@
 <template>
-  <div class="page-grid">
-    <article class="panel">
-      <div class="panel__header">
-        <div>
-          <p class="section-eyebrow">AI integration</p>
-          <h3>AI 设置</h3>
-        </div>
-        <div class="filter-row">
-          <el-button @click="loadSettings">刷新</el-button>
-          <el-button :loading="testing" @click="testSettings">测试可用性</el-button>
-          <el-button type="primary" :loading="saving" @click="saveSettings">保存配置</el-button>
-        </div>
-      </div>
-
-      <el-form label-position="top" :model="form">
-        <el-form-item label="启用 AI 解读">
-          <el-switch v-model="form.enabled" inline-prompt active-text="启用" inactive-text="关闭" />
-        </el-form-item>
-        <el-form-item label="运行模式">
-          <el-select v-model="form.mode">
-            <el-option label="关闭（仅保留接口）" value="disabled" />
-            <el-option label="模板解读（推荐）" value="template" />
-            <el-option label="外部 LLM（兼容 OpenAI）" value="openai_compatible" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="模型名">
-          <el-input v-model="form.model" placeholder="例如：gpt-5.2" />
-        </el-form-item>
-        <el-form-item label="API Base URL">
-          <el-input v-model="form.api_base_url" placeholder="例如：https://your-llm-service.example.com/v1" />
-        </el-form-item>
-        <el-form-item label="API Key">
-          <el-input v-model="form.api_key" show-password type="password" placeholder="留空表示保持现有 Key 不变" />
-          <p class="panel__helper">
-            当前状态：{{ form.has_api_key ? `已配置 (${form.api_key_masked || '已隐藏'})` : '未配置' }}
-          </p>
-        </el-form-item>
-        <el-form-item label="温度">
-          <el-input-number v-model="form.temperature" :min="0" :max="1" :step="0.05" />
-        </el-form-item>
-        <el-form-item label="系统提示词">
-          <el-input v-model="form.system_prompt" type="textarea" :rows="5" placeholder="可选，自定义 AI 健康解读提示词" />
-        </el-form-item>
-      </el-form>
-
-      <div class="split-panel">
-        <article class="panel panel--dense">
-          <div class="panel__header">
-            <div>
-              <p class="section-eyebrow">Mode note</p>
-              <h3>模式说明</h3>
-            </div>
-          </div>
-          <div class="timeline-list">
-            <div class="timeline-item">
-              <strong>disabled</strong>
-              <p>接口仍存在，但只返回模板内容，不视为启用 AI。</p>
-            </div>
-            <div class="timeline-item">
-              <strong>template</strong>
-              <p>后端直接生成面向患者的中文模板解释，不依赖外部模型。</p>
-            </div>
-            <div class="timeline-item">
-              <strong>openai_compatible</strong>
-              <p>调用兼容 OpenAI Chat Completions 的外部模型，失败时自动回退模板解释。</p>
-            </div>
-          </div>
-        </article>
-
-        <article class="panel panel--dense">
-          <div class="panel__header">
-            <div>
-              <p class="section-eyebrow">Current state</p>
-              <h3>当前状态</h3>
-            </div>
-          </div>
-          <div class="timeline-list">
-            <div class="timeline-item">
-              <strong>启用状态</strong>
-              <p>{{ form.enabled ? '已启用' : '未启用' }}</p>
-            </div>
-            <div class="timeline-item">
-              <strong>运行模式</strong>
-              <p>{{ form.mode }}</p>
-            </div>
-            <div class="timeline-item">
-              <strong>最近更新时间</strong>
-              <p>{{ formatDateTime(form.updated_at) }}</p>
-            </div>
-          </div>
-        </article>
-      </div>
-
-      <article class="panel panel--dense">
+  <div class="split-layout">
+    <!-- Left: Configuration Panel -->
+    <div class="config-panel">
+      <article class="panel">
         <div class="panel__header">
           <div>
-            <p class="section-eyebrow">AI test</p>
-            <h3>测试结果</h3>
+            <p class="section-eyebrow">Strategy & Integration</p>
+            <h3>AI 核心设置</h3>
+          </div>
+          <div class="filter-row">
+            <el-button @click="loadSettings">重置</el-button>
+            <el-button type="primary" :loading="saving" @click="saveSettings">部署策略</el-button>
           </div>
         </div>
-        <div class="timeline-list">
-          <div class="timeline-item">
-            <strong>状态</strong>
-            <p>{{ testResult.ok === null ? '未测试' : testResult.ok ? '可用' : '不可用' }}</p>
+
+        <el-form label-position="top" :model="form">
+          <div class="stats-row" style="grid-template-columns: repeat(2, 1fr); margin-bottom: 2rem;">
+            <div class="stat-card">
+              <p class="section-eyebrow">Switch</p>
+              <div class="stat-card__value" :style="{ color: form.enabled ? 'var(--success)' : 'var(--danger)' }">
+                {{ form.enabled ? 'ON' : 'OFF' }}
+              </div>
+              <el-switch v-model="form.enabled" />
+            </div>
+            <div class="stat-card">
+              <p class="section-eyebrow">Engine</p>
+              <div class="stat-card__value" style="font-size: 2rem;">{{ form.mode }}</div>
+              <el-select v-model="form.mode" size="small">
+                <el-option label="DISABLED" value="disabled" />
+                <el-option label="TEMPLATE" value="template" />
+                <el-option label="OPENAI" value="openai_compatible" />
+              </el-select>
+            </div>
           </div>
-          <div class="timeline-item">
-            <strong>来源</strong>
-            <p>{{ testResult.source || '--' }}</p>
-          </div>
-          <div class="timeline-item">
-            <strong>说明</strong>
-            <p>{{ testResult.error || testResult.message || '点击“测试可用性”后显示结果。' }}</p>
-          </div>
-        </div>
-        <el-input
-          v-if="testResult.content"
-          :model-value="testResult.content"
-          type="textarea"
-          :rows="12"
-          readonly
-        />
+
+          <el-form-item label="MODEL / 模型标识">
+            <el-input v-model="form.model" placeholder="例如：gpt-4o-mini" />
+          </el-form-item>
+          
+          <el-form-item label="ENDPOINT / API 基础路径">
+            <el-input v-model="form.api_base_url" placeholder="https://..." />
+          </el-form-item>
+          
+          <el-form-item label="AUTH / API 密钥">
+            <el-input v-model="form.api_key" show-password type="password" placeholder="KEEP EMPTY TO REMAIN UNCHANGED" />
+            <p class="panel__helper" v-if="form.has_api_key">
+              [SYSTEM] 密钥已加密存储。掩码：{{ form.api_key_masked }}
+            </p>
+          </el-form-item>
+
+          <el-form-item label="TEMPERATURE / 创造力系数">
+            <el-slider v-model="form.temperature" :min="0" :max="1" :step="0.01" show-input />
+          </el-form-item>
+
+          <el-form-item label="SYSTEM PROMPT / 核心指令">
+            <el-input
+              v-model="form.system_prompt"
+              type="textarea"
+              :rows="8"
+              placeholder="输入 AI 角色定义与临床解读规范..."
+            />
+          </el-form-item>
+        </el-form>
       </article>
-    </article>
+    </div>
+
+    <!-- Right: Real-time Testing Lab -->
+    <aside class="lab-panel">
+      <div class="lab-panel__header">
+        <p class="section-eyebrow" style="color: var(--panel)">Clinical AI Lab</p>
+        <h3 style="margin: 0.5rem 0; color: var(--panel)">实时推理实验场</h3>
+      </div>
+      
+      <div class="lab-panel__body">
+        <div>
+          <p class="section-eyebrow">Connection check</p>
+          <div style="margin-top: 0.5rem;">
+            <span v-if="testResult.ok === null" class="status-badge">READY</span>
+            <span v-else-if="testResult.ok" class="status-badge status-badge--ok">STABLE</span>
+            <span v-else class="status-badge status-badge--error">FAILURE</span>
+          </div>
+        </div>
+
+        <div>
+          <p class="section-eyebrow">Simulated Measurement Data (JSON)</p>
+          <el-input
+            v-model="simulatedInput"
+            type="textarea"
+            :rows="5"
+            placeholder='{"heart_rate": 85, "hrv": 45, "risk": "low"}'
+            style="margin-top: 0.5rem;"
+          />
+        </div>
+
+        <el-button
+          type="primary"
+          style="width: 100%; height: 60px; font-size: 1.1rem;"
+          :loading="testing"
+          @click="testSettings"
+        >
+          EXECUTE INFERENCE / 执行 AI 推理
+        </el-button>
+
+        <div style="flex: 1; display: flex; flex-direction: column;">
+          <p class="section-eyebrow">Inference Result / 报告生成结果</p>
+          <div class="result-view" style="margin-top: 0.5rem;">
+            <div v-if="!testResult.content && !testResult.error" style="color: var(--muted); text-align: center; padding-top: 4rem;">
+              等待推理指令...
+            </div>
+            <div v-else-if="testResult.error" style="color: var(--danger)">
+              [ERROR] {{ testResult.error }}
+            </div>
+            <div v-else>
+              <p style="margin-top: 0; color: var(--accent); font-weight: 800;">[SOURCE: {{ testResult.source }}]</p>
+              {{ testResult.content }}
+            </div>
+          </div>
+        </div>
+        
+        <div class="panel__header" style="border-bottom: none; border-top: var(--border-weight) solid var(--ink); padding: 1rem 0 0;">
+          <p class="section-eyebrow">Performance</p>
+          <p style="margin: 0; font-family: monospace;">LATENCY: {{ testLatency }}ms</p>
+        </div>
+      </div>
+    </aside>
   </div>
 </template>
 
@@ -130,10 +132,12 @@ import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 
 import { api } from '../utils/api'
-import { formatDateTime } from '../utils/format'
 
 const saving = ref(false)
 const testing = ref(false)
+const testLatency = ref(0)
+const simulatedInput = ref('{\n  "heartRate": 112,\n  "hrv": 15,\n  "wearStatusText": "佩戴良好",\n  "measured_at": "2024-04-21T10:30:00Z"\n}')
+
 const form = reactive({
   enabled: false,
   mode: 'template',
@@ -146,6 +150,7 @@ const form = reactive({
   system_prompt: '',
   updated_at: '',
 })
+
 const testResult = reactive({
   ok: null as null | boolean,
   source: '',
@@ -177,9 +182,9 @@ async function saveSettings() {
     }
     const { data } = await api.put('/ai/settings', payload)
     Object.assign(form, data, { api_key: '' })
-    ElMessage.success('AI 设置已保存。')
+    ElMessage.success('策略部署成功。')
   } catch {
-    ElMessage.error('AI 设置保存失败。')
+    ElMessage.error('策略部署失败。')
   } finally {
     saving.value = false
   }
@@ -187,7 +192,17 @@ async function saveSettings() {
 
 async function testSettings() {
   testing.value = true
+  const startTime = Date.now()
   try {
+    let testData = {}
+    try {
+      testData = JSON.parse(simulatedInput.value)
+    } catch {
+      ElMessage.error('测试数据 JSON 格式有误。')
+      testing.value = false
+      return
+    }
+
     const payload = {
       enabled: form.enabled,
       mode: form.mode,
@@ -195,26 +210,30 @@ async function testSettings() {
       model: form.model,
       temperature: form.temperature,
       system_prompt: form.system_prompt,
+      test_data: testData,
       ...(form.api_key ? { api_key: form.api_key } : {}),
     }
     const { data } = await api.post('/ai/settings/test', payload)
+    testLatency.value = Date.now() - startTime
     Object.assign(testResult, {
       ok: Boolean(data.ok),
       source: data.source || '',
       content: data.content || '',
       error: data.error || '',
-      message: data.ok ? 'AI 测试通过。' : 'AI 测试未通过。',
+      message: data.ok ? 'AI 推理成功。' : 'AI 推理异常。',
     })
-    ElMessage.success(data.ok ? 'AI 测试通过。' : 'AI 测试完成。')
-  } catch {
+    if (data.ok) ElMessage.success('AI 推理任务完成。')
+    else ElMessage.warning('AI 推理返回异常。')
+  } catch (err: any) {
+    testLatency.value = Date.now() - startTime
     Object.assign(testResult, {
       ok: false,
       source: '',
       content: '',
-      error: 'AI 测试请求失败。',
+      error: err?.response?.data?.error || '请求超时或配置错误。',
       message: '',
     })
-    ElMessage.error('AI 测试失败。')
+    ElMessage.error('推理引擎连接失败。')
   } finally {
     testing.value = false
   }

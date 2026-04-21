@@ -1,7 +1,7 @@
 <template>
   <div class="risk-bar">
     <div class="risk-bar__meta">
-      <span>{{ label }}</span>
+      <span class="section-eyebrow">{{ label }}</span>
       <strong>{{ total }}</strong>
     </div>
     <div class="risk-bar__track">
@@ -21,6 +21,6 @@ const props = defineProps<{
 
 const width = computed(() => {
   if (!props.max) return 0
-  return Math.max(8, (props.total / props.max) * 100)
+  return (props.total / props.max) * 100
 })
 </script>

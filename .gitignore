@@ -1,5 +1,11 @@
+# Local environments
 .venv/
-.claude/
-study/
+
+# Agent / local notes
 .claude/
 claude.md
+
+# Legacy and temporary material
+study/
+Android/
+.tmp_study/

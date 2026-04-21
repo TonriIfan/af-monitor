@@ -1,4 +1,4 @@
-import json
+import copy
 
 from django.shortcuts import get_object_or_404
 from django.utils.dateparse import parse_datetime
@@ -13,7 +13,15 @@ from .llm import (
     request_ai_chat,
     request_llm_insight,
 )
-from .models import AiSettings, AlertEvent, Measurement, PushDeviceRegistration, SymptomFeedback
+from .ml import analyze_ppg_samples
+from .models import (
+    AiSettings,
+    AlertEvent,
+    Measurement,
+    PpgAnalysisRecord,
+    PushDeviceRegistration,
+    SymptomFeedback,
+)
 from .serializers import (
     AlertSerializer,
     AlertStateUpdateSerializer,
@@ -23,6 +31,8 @@ from .serializers import (
     MeasurementTrendSerializer,
     MeasurementSerializer,
     PacketIngestSerializer,
+    PpgAnalysisRecordSerializer,
+    PpgAnalyzeSerializer,
     PushDeviceRegistrationSerializer,
     SymptomFeedbackSerializer,
 )
@@ -35,6 +45,7 @@ from .services import (
     build_measurement_chart,
     build_measurement_trends,
     build_period_report,
+    devices_queryset_for_scope,
     ingest_packet,
     measurements_queryset_for_scope,
     scope_user_for_request,
@@ -47,14 +58,14 @@ class PacketIngestView(APIView):
     def post(self, request):
         serializer = PacketIngestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        raw_request_payload = json.loads(json.dumps(request.data))
+        raw_request_payload = copy.deepcopy(request.data)
         bundle = ingest_packet(
             validated_data=serializer.validated_data,
             raw_payload=raw_request_payload,
             request_user=request.user if request.user.is_authenticated else None,
         )
         return Response(
-            MeasurementSerializer(bundle['measurement']).data,
+            MeasurementSerializer(bundle["measurement"]).data,
             status=status.HTTP_201_CREATED,
         )
 
@@ -66,19 +77,19 @@ class PacketBatchIngestView(APIView):
         serializer = MeasurementBatchIngestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         created_items = []
-        raw_items = list(request.data.get('items', []))
-        for index, item in enumerate(serializer.validated_data['items']):
+        raw_items = list(request.data.get("items", []))
+        for index, item in enumerate(serializer.validated_data["items"]):
             raw_payload = raw_items[index] if index < len(raw_items) else item
             bundle = ingest_packet(
                 validated_data=item,
                 raw_payload=raw_payload,
                 request_user=request.user,
             )
-            created_items.append(MeasurementSerializer(bundle['measurement']).data)
+            created_items.append(MeasurementSerializer(bundle["measurement"]).data)
         return Response(
             {
-                'created_count': len(created_items),
-                'items': created_items,
+                "created_count": len(created_items),
+                "items": created_items,
             },
             status=status.HTTP_201_CREATED,
         )
@@ -90,11 +101,13 @@ class MeasurementListView(generics.ListAPIView):
 
     def get_queryset(self):
         scope_user = scope_user_for_request(self.request)
-        queryset = measurements_queryset_for_scope(scope_user).select_related('raw_packet')
+        queryset = measurements_queryset_for_scope(scope_user).select_related(
+            "raw_packet"
+        )
 
-        device_id = self.request.query_params.get('device_id')
-        start = self.request.query_params.get('start')
-        end = self.request.query_params.get('end')
+        device_id = self.request.query_params.get("device_id")
+        start = self.request.query_params.get("start")
+        end = self.request.query_params.get("end")
 
         if device_id:
             queryset = queryset.filter(device__device_id=device_id)
@@ -115,8 +128,10 @@ class MeasurementLatestView(generics.RetrieveAPIView):
 
     def get_object(self):
         scope_user = scope_user_for_request(self.request)
-        queryset = measurements_queryset_for_scope(scope_user).select_related('raw_packet')
-        device_id = self.request.query_params.get('device_id')
+        queryset = measurements_queryset_for_scope(scope_user).select_related(
+            "raw_packet"
+        )
+        device_id = self.request.query_params.get("device_id")
         if device_id:
             queryset = queryset.filter(device__device_id=device_id)
         return queryset.first()
@@ -124,7 +139,9 @@ class MeasurementLatestView(generics.RetrieveAPIView):
     def retrieve(self, request, *args, **kwargs):
         instance = self.get_object()
         if not instance:
-            return Response({'detail': '暂无测量数据。'}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {"detail": "暂无测量数据。"}, status=status.HTTP_404_NOT_FOUND
+            )
         serializer = self.get_serializer(instance)
         return Response(serializer.data)
 
@@ -132,12 +149,12 @@ class MeasurementLatestView(generics.RetrieveAPIView):
 class MeasurementDetailView(generics.RetrieveAPIView):
     serializer_class = MeasurementSerializer
     permission_classes = [permissions.IsAuthenticated]
-    lookup_url_kwarg = 'measurement_id'
+    lookup_url_kwarg = "measurement_id"
 
     def get_object(self):
         scope_user = scope_user_for_request(self.request)
         return get_object_or_404(
-            measurements_queryset_for_scope(scope_user).select_related('raw_packet'),
+            measurements_queryset_for_scope(scope_user).select_related("raw_packet"),
             id=self.kwargs[self.lookup_url_kwarg],
         )
 
@@ -149,7 +166,7 @@ class AlertListView(generics.ListAPIView):
     def get_queryset(self):
         scope_user = scope_user_for_request(self.request)
         queryset = alerts_queryset_for_scope(scope_user)
-        device_id = self.request.query_params.get('device_id')
+        device_id = self.request.query_params.get("device_id")
         if device_id:
             queryset = queryset.filter(device__device_id=device_id)
         return queryset
@@ -158,11 +175,13 @@ class AlertListView(generics.ListAPIView):
 class AlertDetailView(generics.RetrieveAPIView):
     serializer_class = AlertSerializer
     permission_classes = [permissions.IsAuthenticated]
-    lookup_url_kwarg = 'alert_id'
+    lookup_url_kwarg = "alert_id"
 
     def get_object(self):
         scope_user = scope_user_for_request(self.request)
-        return get_object_or_404(alerts_queryset_for_scope(scope_user), id=self.kwargs[self.lookup_url_kwarg])
+        return get_object_or_404(
+            alerts_queryset_for_scope(scope_user), id=self.kwargs[self.lookup_url_kwarg]
+        )
 
 
 class AlertReadView(APIView):
@@ -174,7 +193,9 @@ class AlertReadView(APIView):
             alerts_queryset_for_scope(scope_user),
             id=alert_id,
         )
-        serializer = AlertStateUpdateSerializer(instance=alert, data=request.data or {}, partial=True)
+        serializer = AlertStateUpdateSerializer(
+            instance=alert, data=request.data or {}, partial=True
+        )
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(AlertSerializer(alert).data, status=status.HTTP_200_OK)
@@ -187,11 +208,19 @@ class AlertReadAllView(APIView):
         from django.utils import timezone
 
         scope_user = scope_user_for_request(request) or request.user
-        queryset = alerts_queryset_for_scope(scope_user).filter(status=AlertEvent.STATUS_UNREAD)
-        read_at_raw = request.data.get('read_at')
-        read_at = parse_datetime(read_at_raw) if isinstance(read_at_raw, str) and read_at_raw else timezone.now()
-        updated = queryset.update(status=AlertEvent.STATUS_READ, is_read=True, read_at=read_at)
-        return Response({'updated_count': updated}, status=status.HTTP_200_OK)
+        queryset = alerts_queryset_for_scope(scope_user).filter(
+            status=AlertEvent.STATUS_UNREAD
+        )
+        read_at_raw = request.data.get("read_at")
+        read_at = (
+            parse_datetime(read_at_raw)
+            if isinstance(read_at_raw, str) and read_at_raw
+            else timezone.now()
+        )
+        updated = queryset.update(
+            status=AlertEvent.STATUS_READ, is_read=True, read_at=read_at
+        )
+        return Response({"updated_count": updated}, status=status.HTTP_200_OK)
 
 
 class AlertUnreadCountView(APIView):
@@ -199,8 +228,12 @@ class AlertUnreadCountView(APIView):
 
     def get(self, request):
         scope_user = scope_user_for_request(request) or request.user
-        count = alerts_queryset_for_scope(scope_user).filter(status=AlertEvent.STATUS_UNREAD).count()
-        return Response({'unread_count': count}, status=status.HTTP_200_OK)
+        count = (
+            alerts_queryset_for_scope(scope_user)
+            .filter(status=AlertEvent.STATUS_UNREAD)
+            .count()
+        )
+        return Response({"unread_count": count}, status=status.HTTP_200_OK)
 
 
 class HomeSummaryView(APIView):
@@ -233,12 +266,12 @@ class MeasurementChartView(APIView):
 
     def get(self, request):
         scope_user = scope_user_for_request(request) or request.user
-        metric = request.query_params.get('metric', 'heart_rate')
-        range_key = request.query_params.get('range', '7d')
+        metric = request.query_params.get("metric", "heart_rate")
+        range_key = request.query_params.get("range", "7d")
         try:
             payload = build_measurement_chart(scope_user, metric, range_key)
         except ValueError as exc:
-            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(payload, status=status.HTTP_200_OK)
 
 
@@ -249,7 +282,9 @@ class AnalysisLatestView(APIView):
         scope_user = scope_user_for_request(request) or request.user
         payload = build_analysis_latest(scope_user)
         if payload is None:
-            return Response({'detail': '暂无分析结果。'}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {"detail": "暂无分析结果。"}, status=status.HTTP_404_NOT_FOUND
+            )
         return Response(payload, status=status.HTTP_200_OK)
 
 
@@ -258,8 +293,11 @@ class AnalysisHistoryView(APIView):
 
     def get(self, request):
         scope_user = scope_user_for_request(request) or request.user
-        limit = min(int(request.query_params.get('limit', 20)), 100)
-        return Response({'items': build_analysis_history(scope_user, limit)}, status=status.HTTP_200_OK)
+        limit = min(int(request.query_params.get("limit", 20)), 100)
+        return Response(
+            {"items": build_analysis_history(scope_user, limit)},
+            status=status.HTTP_200_OK,
+        )
 
 
 class MeasurementLlmInsightView(APIView):
@@ -268,10 +306,14 @@ class MeasurementLlmInsightView(APIView):
     def post(self, request, measurement_id):
         scope_user = scope_user_for_request(request)
         measurement = get_object_or_404(
-            measurements_queryset_for_scope(scope_user).select_related('analysis_result', 'device', 'user'),
+            measurements_queryset_for_scope(scope_user).select_related(
+                "analysis_result", "device", "user"
+            ),
             id=measurement_id,
         )
-        context = build_measurement_llm_context(measurement, measurement.analysis_result)
+        context = build_measurement_llm_context(
+            measurement, measurement.analysis_result
+        )
         payload = request_llm_insight(context)
         return Response(payload, status=status.HTTP_200_OK)
 
@@ -280,19 +322,27 @@ class AiChatView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
-        message = (request.data.get('message') or '').strip()
+        message = (request.data.get("message") or "").strip()
         if not message:
-            return Response({'detail': 'message 不能为空。'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"detail": "message 不能为空。"}, status=status.HTTP_400_BAD_REQUEST
+            )
         latest_analysis = build_analysis_latest(request.user)
         trends = build_measurement_trends(request.user)
-        unread_count = alerts_queryset_for_scope(request.user).filter(status=AlertEvent.STATUS_UNREAD).count()
+        unread_count = (
+            alerts_queryset_for_scope(request.user)
+            .filter(status=AlertEvent.STATUS_UNREAD)
+            .count()
+        )
         payload = request_ai_chat(
             {
-                'user_id': request.user.id,
-                'username': request.user.username,
-                'latest_analysis': latest_analysis['analysis'] if latest_analysis else None,
-                'trend_preview': trends['daily'],
-                'unread_alert_count': unread_count,
+                "user_id": request.user.id,
+                "username": request.user.username,
+                "latest_analysis": latest_analysis["analysis"]
+                if latest_analysis
+                else None,
+                "trend_preview": trends["daily"],
+                "unread_alert_count": unread_count,
             },
             message,
         )
@@ -308,20 +358,30 @@ class AiSettingsView(APIView):
 
     def put(self, request):
         settings_obj = get_ai_settings()
-        serializer = AiSettingsSerializer(instance=settings_obj, data=request.data, partial=True)
+        serializer = AiSettingsSerializer(
+            instance=settings_obj, data=request.data, partial=True
+        )
         serializer.is_valid(raise_exception=True)
         serializer.save()
-        return Response(AiSettingsSerializer(settings_obj).data, status=status.HTTP_200_OK)
+        return Response(
+            AiSettingsSerializer(settings_obj).data, status=status.HTTP_200_OK
+        )
 
 
 class AiSettingsTestView(APIView):
     permission_classes = [permissions.IsAdminUser]
 
     def post(self, request):
-        serializer = AiSettingsSerializer(instance=get_ai_settings(), data=request.data or {}, partial=True)
+        serializer = AiSettingsSerializer(
+            instance=get_ai_settings(), data=request.data or {}, partial=True
+        )
         serializer.is_valid(raise_exception=True)
-        payload = request_llm_insight(build_demo_llm_context(), overrides=serializer.validated_data)
-        payload['ok'] = payload['source'] in {'template', 'llm'} and not payload.get('error')
+        payload = request_llm_insight(
+            build_demo_llm_context(), overrides=serializer.validated_data
+        )
+        payload["ok"] = payload["source"] in {"template", "llm"} and not payload.get(
+            "error"
+        )
         return Response(payload, status=status.HTTP_200_OK)
 
 
@@ -331,8 +391,12 @@ class SymptomFeedbackView(APIView):
     def post(self, request):
         serializer = SymptomFeedbackSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        instance = SymptomFeedback.objects.create(user=request.user, **serializer.validated_data)
-        return Response(SymptomFeedbackSerializer(instance).data, status=status.HTTP_201_CREATED)
+        instance = SymptomFeedback.objects.create(
+            user=request.user, **serializer.validated_data
+        )
+        return Response(
+            SymptomFeedbackSerializer(instance).data, status=status.HTTP_201_CREATED
+        )
 
 
 class PushRegisterDeviceView(APIView):
@@ -342,16 +406,18 @@ class PushRegisterDeviceView(APIView):
         serializer = PushDeviceRegistrationSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         instance, _ = PushDeviceRegistration.objects.update_or_create(
-            device_token=serializer.validated_data['device_token'],
+            device_token=serializer.validated_data["device_token"],
             defaults={
-                'user': request.user,
-                'platform': serializer.validated_data['platform'],
-                'app_version': serializer.validated_data.get('app_version', ''),
-                'device_name': serializer.validated_data.get('device_name', ''),
-                'is_active': serializer.validated_data.get('is_active', True),
+                "user": request.user,
+                "platform": serializer.validated_data["platform"],
+                "app_version": serializer.validated_data.get("app_version", ""),
+                "device_name": serializer.validated_data.get("device_name", ""),
+                "is_active": serializer.validated_data.get("is_active", True),
             },
         )
-        return Response(PushDeviceRegistrationSerializer(instance).data, status=status.HTTP_200_OK)
+        return Response(
+            PushDeviceRegistrationSerializer(instance).data, status=status.HTTP_200_OK
+        )
 
 
 class WeeklyReportView(APIView):
@@ -365,4 +431,47 @@ class MonthlyReportView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        return Response(build_period_report(request.user, 30), status=status.HTTP_200_OK)
+        return Response(
+            build_period_report(request.user, 30), status=status.HTTP_200_OK
+        )
+
+
+class PpgAnalyzeView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        serializer = PpgAnalyzeSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        target_user = scope_user_for_request(request) or request.user
+        device = get_object_or_404(
+            devices_queryset_for_scope(target_user),
+            device_id=serializer.validated_data["device_id"],
+        )
+        analysis = analyze_ppg_samples(
+            serializer.validated_data["samples"],
+            serializer.validated_data["sample_rate_hz"],
+        )
+        record = PpgAnalysisRecord.objects.create(
+            user=target_user,
+            device=device,
+            collected_at=serializer.validated_data["collected_at"],
+            source=serializer.validated_data["source"],
+            sample_rate_hz=serializer.validated_data["sample_rate_hz"],
+            window_seconds=serializer.validated_data["window_seconds"],
+            sample_count=len(serializer.validated_data["samples"]),
+            samples=serializer.validated_data["samples"],
+            quality_pass=analysis["quality_pass"],
+            quality_score=analysis["quality_score"],
+            af_probability=analysis["af_probability"],
+            af_label=analysis["af_label"],
+            model_version=analysis["model_version"],
+            model_source=analysis["model_source"],
+            features={
+                **analysis["features"],
+                "decision_threshold": float(analysis["decision_threshold"]),
+            },
+        )
+        return Response(
+            PpgAnalysisRecordSerializer(record).data, status=status.HTTP_201_CREATED
+        )

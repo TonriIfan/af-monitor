@@ -271,3 +271,33 @@ class PushDeviceRegistration(models.Model):
 
     class Meta:
         ordering = ['-last_seen_at']
+
+
+class PpgAnalysisRecord(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='ppg_analysis_records',
+    )
+    device = models.ForeignKey(
+        Device,
+        on_delete=models.CASCADE,
+        related_name='ppg_analysis_records',
+    )
+    collected_at = models.DateTimeField()
+    source = models.CharField(max_length=64, default='app_upload')
+    sample_rate_hz = models.FloatField()
+    window_seconds = models.DecimalField(max_digits=6, decimal_places=2)
+    sample_count = models.PositiveIntegerField()
+    samples = models.JSONField(default=list, blank=True)
+    quality_pass = models.BooleanField(default=False)
+    quality_score = models.DecimalField(max_digits=4, decimal_places=2, default=0)
+    af_probability = models.DecimalField(max_digits=4, decimal_places=2, default=0)
+    af_label = models.BooleanField(default=False)
+    model_version = models.CharField(max_length=64, default='heuristic-v1')
+    model_source = models.CharField(max_length=16, default='heuristic')
+    features = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-collected_at', '-id']

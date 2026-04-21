@@ -8,6 +8,7 @@ from hashlib import sha1
 from statistics import mean
 from typing import Any
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.db.models import Count, Q
@@ -18,6 +19,7 @@ from django.utils.dateparse import parse_datetime
 from accounts.location import build_login_location_payload
 from devices.models import Device
 
+from .ml import analyze_structured_measurement_window
 from .models import AlertEvent, AnalysisResult, Measurement, RawPacket, UploadSession
 
 User = get_user_model()
@@ -318,42 +320,47 @@ def _build_baseline_flags(measurement: Measurement, history_queryset) -> tuple[l
     return flags, score, baselines
 
 
-def analyze_measurement(measurement: Measurement) -> dict[str, Any]:
-    labels: list[str] = []
-    worn = measurement.wear_status in {'佩戴', '采集中'} or measurement.oxygen_wear_status in {'佩戴', '采集中'}
-    history_queryset = _history_queryset(measurement)
-    realtime_flags, realtime_score = _build_realtime_flags(measurement, worn)
-    window_flags, window_score, window_stats = _build_window_flags(measurement, history_queryset)
-    baseline_flags, baseline_score, baselines = _build_baseline_flags(measurement, history_queryset)
+def _structured_ml_unavailable(skip_reason: str) -> dict[str, Any]:
+    return {
+        'enabled': True,
+        'available': False,
+        'model_name': '',
+        'model_version': '',
+        'probability': 0.0,
+        'decision_threshold': 0.0,
+        'label': False,
+        'feature_source': 'measurement_window',
+        'skip_reason': skip_reason,
+        'features': {},
+    }
 
-    triggers = realtime_flags + window_flags + baseline_flags
-    score = realtime_score + window_score + baseline_score
-    if not worn:
-        triggers.append('context_unstable_wear_state')
-        score = max(Decimal('0.00'), score - Decimal('0.10'))
 
-    score = min(score, Decimal('0.99'))
+def _build_structured_ml_analysis(measurement: Measurement, history_queryset) -> dict[str, Any]:
+    if measurement.heart_rate is None:
+        return _structured_ml_unavailable('current_heart_rate_missing')
+
+    lookback_minutes = settings.STRUCTURED_AF_LOOKBACK_MINUTES
+    window_measurements = list(
+        _window_queryset(history_queryset, measurement, lookback_minutes)
+        .exclude(heart_rate__isnull=True)
+        .order_by('measured_at')
+    )
+    window_measurements.append(measurement)
+    duration_seconds = float(lookback_minutes * 60)
+    return analyze_structured_measurement_window(window_measurements, duration_seconds)
+
+
+def _risk_from_score(score: Decimal) -> tuple[str, str]:
     if score >= Decimal('0.80'):
-        risk_level = AlertEvent.LEVEL_CRITICAL
-        labels.append('高危异常心律风险')
-    elif score >= Decimal('0.50'):
-        risk_level = AlertEvent.LEVEL_HIGH
-        labels.append('较高异常心律风险')
-    elif score >= Decimal('0.30'):
-        risk_level = AlertEvent.LEVEL_MODERATE
-        labels.append('中等异常心律风险')
-    else:
-        risk_level = AlertEvent.LEVEL_LOW
-        labels.append('低风险')
+        return AlertEvent.LEVEL_CRITICAL, '高危异常心律风险'
+    if score >= Decimal('0.50'):
+        return AlertEvent.LEVEL_HIGH, '较高异常心律风险'
+    if score >= Decimal('0.30'):
+        return AlertEvent.LEVEL_MODERATE, '中等异常心律风险'
+    return AlertEvent.LEVEL_LOW, '低风险'
 
-    if window_flags:
-        labels.append('存在连续时间窗异常')
-    if baseline_flags:
-        labels.append('存在个人基线偏移')
-    if not worn:
-        labels.append('佩戴状态不稳定，结果需谨慎解释')
 
-    should_alert = risk_level in {AlertEvent.LEVEL_HIGH, AlertEvent.LEVEL_CRITICAL}
+def _rule_summary_parts(realtime_flags: list[str], window_flags: list[str], baseline_flags: list[str]) -> list[str]:
     summary_parts = []
     if realtime_flags:
         summary_parts.append(f'实时异常: {", ".join(realtime_flags)}')
@@ -361,13 +368,84 @@ def analyze_measurement(measurement: Measurement) -> dict[str, Any]:
         summary_parts.append(f'时间窗异常: {", ".join(window_flags)}')
     if baseline_flags:
         summary_parts.append(f'基线偏移: {", ".join(baseline_flags)}')
-    if not summary_parts:
-        summary_parts.append('未发现明显异常。')
-    if triggers:
+    return summary_parts
+
+
+def _ml_score_from_probability(probability: Decimal, threshold: Decimal) -> Decimal:
+    if probability >= Decimal('0.85'):
+        return Decimal('0.88')
+    if probability >= threshold:
+        return max(Decimal('0.62'), min(Decimal('0.84'), probability))
+    if probability >= max(Decimal('0.00'), threshold - Decimal('0.15')):
+        return max(Decimal('0.34'), min(Decimal('0.49'), probability))
+    return min(Decimal('0.29'), probability)
+
+
+def analyze_measurement(measurement: Measurement) -> dict[str, Any]:
+    labels: list[str] = []
+    worn = measurement.wear_status in {'佩戴', '采集中'} or measurement.oxygen_wear_status in {'佩戴', '采集中'}
+    history_queryset = _history_queryset(measurement)
+    realtime_flags, realtime_score = _build_realtime_flags(measurement, worn)
+    window_flags, window_score, window_stats = _build_window_flags(measurement, history_queryset)
+    baseline_flags, baseline_score, baselines = _build_baseline_flags(measurement, history_queryset)
+    ml_analysis = _build_structured_ml_analysis(measurement, history_queryset)
+
+    if ml_analysis.get('available'):
+        probability = Decimal(str(ml_analysis.get('probability') or 0))
+        threshold = Decimal(str(ml_analysis.get('decision_threshold') or 0.5))
+        ml_summary = f'结构化 ML 房颤概率: {probability}'
+        score = _ml_score_from_probability(probability, threshold)
+        if not worn:
+            score = max(Decimal('0.00'), score - Decimal('0.10'))
+
+        risk_level, risk_label = _risk_from_score(score)
+        labels.append(risk_label)
+        triggers = ['ml_structured_af_negative']
+        if ml_analysis.get('label'):
+            triggers = ['ml_structured_af_positive']
+            labels.append('机器学习提示房颤风险')
+        elif score >= Decimal('0.30'):
+            triggers = ['ml_structured_af_watch']
+            labels.append('机器学习提示需持续观察')
+
+        if not worn:
+            triggers.append('context_unstable_wear_state')
+            labels.append('佩戴状态不稳定，结果需谨慎解释')
+
+        if realtime_flags or window_flags or baseline_flags:
+            labels.append('规则引擎提供辅助解释')
+
+        should_alert = risk_level in {AlertEvent.LEVEL_HIGH, AlertEvent.LEVEL_CRITICAL}
+        summary_parts = [ml_summary]
+        summary_parts.extend(_rule_summary_parts(realtime_flags, window_flags, baseline_flags))
         summary_parts.append(f'综合命中: {", ".join(triggers)}')
+    else:
+        triggers = realtime_flags + window_flags + baseline_flags
+        score = realtime_score + window_score + baseline_score
+        if not worn:
+            triggers.append('context_unstable_wear_state')
+            score = max(Decimal('0.00'), score - Decimal('0.10'))
+
+        score = min(score, Decimal('0.99'))
+        risk_level, risk_label = _risk_from_score(score)
+        labels.append(risk_label)
+        if window_flags:
+            labels.append('存在连续时间窗异常')
+        if baseline_flags:
+            labels.append('存在个人基线偏移')
+        if not worn:
+            labels.append('佩戴状态不稳定，结果需谨慎解释')
+        labels.append('机器学习暂不可用，已使用规则引擎兜底')
+
+        should_alert = risk_level in {AlertEvent.LEVEL_HIGH, AlertEvent.LEVEL_CRITICAL}
+        summary_parts = _rule_summary_parts(realtime_flags, window_flags, baseline_flags)
+        if not summary_parts:
+            summary_parts.append('未发现明显异常。')
+        if triggers:
+            summary_parts.append(f'综合命中: {", ".join(triggers)}')
 
     return {
-        'algorithm_version': 'rules-window-baseline-v2',
+        'algorithm_version': 'structured-ml-primary-v1',
         'risk_level': risk_level,
         'risk_score': score.quantize(Decimal('0.01')),
         'labels': labels,
@@ -381,6 +459,7 @@ def analyze_measurement(measurement: Measurement) -> dict[str, Any]:
             'window_stats': window_stats,
             'baselines': baselines,
             'wearing_effective': worn,
+            'ml': ml_analysis,
         },
     }
 

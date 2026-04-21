@@ -44,6 +44,9 @@ router.beforeEach((to) => {
   if (to.path === '/ai-settings' && auth.user?.role !== 'admin') {
     return '/measurements'
   }
+  if (to.path === '/ai-lab' && auth.user?.role !== 'admin') {
+    return '/measurements'
+  }
   if (to.path === '/accounts' && auth.user?.role !== 'admin') {
     return '/measurements'
   }

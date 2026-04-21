@@ -1,0 +1,151 @@
+:root {
+  color-scheme: light;
+  --wa-bg: #f5f6f8;
+  --wa-surface: #ffffff;
+  --wa-surface-soft: #fafbfc;
+  --wa-border: #e4e7eb;
+  --wa-fg: #111418;
+  --wa-fg-muted: #6b7280;
+  --wa-accent: #2b6cb0;
+  --wa-accent-soft: rgba(43, 108, 176, 0.08);
+  --wa-success: #2f855a;
+  --wa-warning: #c05621;
+  --wa-danger: #c53030;
+  --wa-radius: 12px;
+  --wa-tab-height: 60px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+  background: var(--wa-bg);
+  color: var(--wa-fg);
+  font-family: system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  font-size: 14px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+#app {
+  max-width: 720px;
+  margin: 0 auto;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--wa-bg);
+  position: relative;
+}
+
+a {
+  color: var(--wa-accent);
+  text-decoration: none;
+}
+
+.wa-page {
+  padding: 16px 16px calc(var(--wa-tab-height) + 32px);
+}
+
+.wa-page-title {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 4px 0 14px;
+  color: var(--wa-fg);
+}
+
+.wa-section-title {
+  font-size: 13px;
+  color: var(--wa-fg-muted);
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  margin: 14px 0 8px;
+}
+
+.wa-card {
+  background: var(--wa-surface);
+  border-radius: var(--wa-radius);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 8px rgba(16, 24, 40, 0.04);
+  padding: 16px;
+  margin-bottom: 12px;
+}
+
+.wa-card__title {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0 0 8px;
+}
+
+.wa-muted {
+  color: var(--wa-fg-muted);
+}
+
+.wa-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.wa-row-between {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.wa-stat {
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.5px;
+}
+
+.wa-stat__unit {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--wa-fg-muted);
+  margin-left: 4px;
+}
+
+.wa-empty {
+  padding: 32px 12px;
+  text-align: center;
+  color: var(--wa-fg-muted);
+  font-size: 13px;
+}
+
+/* Element Plus 在窄屏下的排版微调 */
+.el-button--large {
+  padding: 12px 20px;
+}
+.el-input__wrapper {
+  box-shadow: 0 0 0 1px var(--wa-border) inset !important;
+}
+.el-message-box {
+  max-width: 92vw !important;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --wa-bg: #0f1115;
+    --wa-surface: #181a20;
+    --wa-surface-soft: #1f2128;
+    --wa-border: #2a2d35;
+    --wa-fg: #e5e7eb;
+    --wa-fg-muted: #9ca3af;
+    --wa-accent: #63b3ed;
+    --wa-accent-soft: rgba(99, 179, 237, 0.12);
+    --wa-success: #68d391;
+    --wa-warning: #f6ad55;
+    --wa-danger: #fc8181;
+  }
+  .wa-card {
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  }
+}

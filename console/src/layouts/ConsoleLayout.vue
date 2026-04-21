@@ -4,33 +4,29 @@
       <div class="brand-block">
         <p class="brand-block__eyebrow">HEARTGUARD</p>
         <h2>心脏卫士</h2>
-        <p class="brand-block__copy">心脏健康监测后台，聚焦设备管理、风险识别、告警联动与节律趋势追踪。</p>
       </div>
 
       <el-menu :default-active="route.path" class="console-nav" router>
         <el-menu-item v-if="auth.user?.role === 'admin'" index="/accounts">
-          <el-icon><User /></el-icon>
-          <span>账号</span>
+          <span>账号管理</span>
         </el-menu-item>
         <el-menu-item v-if="auth.user?.role === 'admin'" index="/ai-settings">
-          <el-icon><Bell /></el-icon>
-          <span>AI 设置</span>
+          <span>AI 策略设置</span>
+        </el-menu-item>
+        <el-menu-item v-if="auth.user?.role === 'admin'" index="/ai-lab">
+          <span>AI 评估实验室</span>
         </el-menu-item>
         <el-menu-item v-if="auth.user?.role === 'admin'" index="/dashboard">
-          <el-icon><DataBoard /></el-icon>
-          <span>总览</span>
+          <span>监测态势总览</span>
         </el-menu-item>
         <el-menu-item index="/devices">
-          <el-icon><Cpu /></el-icon>
-          <span>设备</span>
+          <span>设备编排管理</span>
         </el-menu-item>
         <el-menu-item index="/measurements">
-          <el-icon><TrendCharts /></el-icon>
-          <span>测量</span>
+          <span>实时测量明细</span>
         </el-menu-item>
         <el-menu-item index="/alerts">
-          <el-icon><Bell /></el-icon>
-          <span>告警</span>
+          <span>系统告警中心</span>
         </el-menu-item>
       </el-menu>
 

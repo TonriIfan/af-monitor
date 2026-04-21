@@ -54,16 +54,17 @@ def build_demo_llm_context() -> dict[str, Any]:
             'temperature': 37.1,
         },
         'analysis': {
-            'algorithm_version': 'rules-window-baseline-v2',
+            'algorithm_version': 'structured-ml-primary-v1',
             'risk_level': 'high',
             'risk_score': 0.72,
-            'labels': ['较高异常心律风险', '存在连续时间窗异常', '存在个人基线偏移'],
+            'labels': ['较高异常心律风险', '存在连续时间窗异常', '存在个人基线偏移', '机器学习提示房颤风险'],
             'triggers': [
                 'realtime_tachycardia',
                 'realtime_hrv_instability',
                 'realtime_low_oxygen',
                 'window_repeated_tachycardia_30m',
                 'baseline_heart_rate_above_personal_baseline',
+                'ml_structured_af_positive',
             ],
             'details': {
                 'realtime_flags': [
@@ -86,8 +87,25 @@ def build_demo_llm_context() -> dict[str, Any]:
                     'temperature': 36.5,
                 },
                 'wearing_effective': True,
+                'ml': {
+                    'enabled': True,
+                    'available': True,
+                    'model_name': 'lightgbm',
+                    'model_version': 'structured-af-demo',
+                    'probability': 0.83,
+                    'decision_threshold': 0.1,
+                    'label': True,
+                    'feature_source': 'measurement_window',
+                    'skip_reason': '',
+                    'features': {
+                        'hr_mean': 108.4,
+                        'rmssd': 0.12,
+                        'pnn50': 0.58,
+                        'irregular_ratio': 0.63,
+                    },
+                },
             },
-            'summary': '实时异常: realtime_tachycardia, realtime_hrv_instability, realtime_low_oxygen；时间窗异常: window_repeated_tachycardia_30m；基线偏移: baseline_heart_rate_above_personal_baseline',
+            'summary': '实时异常: realtime_tachycardia, realtime_hrv_instability, realtime_low_oxygen；时间窗异常: window_repeated_tachycardia_30m；基线偏移: baseline_heart_rate_above_personal_baseline；结构化 ML 房颤概率: 0.83',
         },
     }
 
@@ -119,6 +137,7 @@ def build_patient_friendly_template(context: dict[str, Any]) -> str:
     realtime_flags = details.get('realtime_flags') or []
     window_flags = details.get('window_flags') or []
     baseline_flags = details.get('baseline_flags') or []
+    ml_payload = details.get('ml') or {}
 
     title = f"风险等级：{analysis['risk_level']}（分数 {analysis['risk_score']:.2f}）"
     interpretation = analysis.get('summary') or '本次未发现明显异常。'
@@ -129,6 +148,10 @@ def build_patient_friendly_template(context: dict[str, Any]) -> str:
         causes.append(f"最近时间窗异常：{', '.join(window_flags)}")
     if baseline_flags:
         causes.append(f"与个人历史基线相比的偏移：{', '.join(baseline_flags)}")
+    if ml_payload.get('available'):
+        causes.append(
+            f"结构化时间窗模型提示房颤风险概率约为 {float(ml_payload.get('probability') or 0):.2f}"
+        )
     if not causes:
         causes.append('当前没有检测到明确的连续异常特征。')
 

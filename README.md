@@ -2,15 +2,16 @@
 
 智能房颤监测项目的后端与控制台工作区。
 
-当前仓库中已经有两套彼此独立的内容：
+当前仓库中包含三套彼此独立的内容：
 
 - [backend](backend)：`Django + DRF` 后端，负责认证、设备绑定、原始包接收、协议解析、风险分析、历史查询、告警处理。
-- [console](console)：`Vue 3 + Vite + Element Plus` 控制台，给后端开发、前端开发、演示使用。
+- [console](console)：`Vue 3 + Vite + Element Plus` 管理控制台，面向管理员。
+- [webapp](webapp)：`Vue 3 + Vite + Element Plus` 用户端，面向佩戴戒指的普通用户，**通过 Web Bluetooth API 直接连接智能戒指**。
 
 说明：
 
-- `study` 目录保留原始材料和微信小程序 BLE 代码，不作为当前控制台和后端开发目录。
-- 控制台读取的是后端的 REST API，不直接访问 `study`。
+- `study` 目录保留原始材料和微信小程序 BLE 代码，不作为当前工程目录。
+- 前端通过后端的 REST API 交互，不直接访问 `study`。
 - 原始设备 `payload` 在后端不会被改写，后端只会额外返回 `parsed`、`analysis`、`alert_state`。
 
 ## 目录说明
@@ -18,7 +19,8 @@
 ```text
 yf-monitor/
 ├─ backend/        Django + DRF 后端
-├─ console/        Vue + Element Plus 控制台
+├─ console/        Vue + Element Plus 管理控制台（管理员端）
+├─ webapp/        Vue + Element Plus 用户端（Web Bluetooth 连接戒指）
 └─ study/          资料与 BLE 小程序代码，不动
 ```
 
@@ -27,8 +29,9 @@ yf-monitor/
 前端开发者建议按这个顺序看：
 
 1. 先读 [backend/README.md](backend/README.md)
-2. 再读 [console/README.md](console/README.md)
-3. 如果要对接设备协议，再补读 [device-protocol.md](backend/docs/device-protocol.md)
+2. 管理端开发再读 [console/README.md](console/README.md)
+3. 用户端开发再读 [webapp/README.md](webapp/README.md)
+4. 如果要对接设备协议，再补读 [device-protocol.md](backend/docs/device-protocol.md)
 
 ## 一分钟启动
 
@@ -64,12 +67,25 @@ npm run dev
 
 默认控制台地址：
 
-- `http://127.0.0.1:5173`
+- `http://127.0.0.1:3000`
 
 默认演示账号：
 
 - 用户名：`admin`
 - 密码：`admin123456`
+
+### 3. 启动用户端（可选，需 Web Bluetooth）
+
+```powershell
+cd yf-monitor\webapp
+npm install
+Copy-Item .env.example .env
+npm run dev
+```
+
+默认用户端地址：
+
+- `http://127.0.0.1:3001`（Chrome / Edge / Opera 才能使用 Web Bluetooth 连接戒指）
 
 ## 控制台当前页面
 
@@ -104,12 +120,14 @@ npm run dev
 ## 当前已验证
 
 - `backend`: `manage.py check`
-- `backend`: `manage.py test`
+- `backend`: `manage.py test`（41 个用例通过）
 - `console`: `npm run build`
+- `webapp`: `npm run build`
 
 ## 当前限制
 
 - `console` 主要是后台管理和演示面板，不是患者端产品 UI
+- `webapp` 仅面向支持 Web Bluetooth 的浏览器（Chrome / Edge / Opera），iOS Safari 与 Firefox 不可用
 - 前端未做实时轮询和 WebSocket 推送
 - `POST /api/v1/packets` 目前默认是单条上报，不是批量上传接口
 - 设备协议解析范围目前只覆盖仓库内已知命令
