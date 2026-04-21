@@ -617,6 +617,7 @@ GET /analysis/history?limit=20
 ```json
 {
   "id": 1,
+  "provider": "fcm",
   "device_token": "push-token-001",
   "platform": "android",
   "app_version": "1.0.0",
@@ -625,6 +626,30 @@ GET /analysis/history?limit=20
   "last_seen_at": "2026-03-16T03:05:00+08:00",
   "created_at": "2026-03-16T03:05:00+08:00"
 }
+```
+
+### 4.7 Web 实时告警事件流
+
+`GET /alerts/events`
+
+用途：
+
+- 为 `webapp` 提供在线实时告警状态更新（SSE）
+
+说明：
+
+- 需要 `Authorization: Token <token>`
+- 响应类型为 `text/event-stream`
+- 首次连接会立即返回一次 `alert_state`
+- 未读数或最新告警变化时会再次推送 `alert_state`
+- 空闲时会返回 `heartbeat`
+- `?once=1` 可用于测试，只返回首个事件后结束
+
+示例事件：
+
+```text
+event: alert_state
+data: {"unread_count":1,"latest_alert":{"id":12,"level":"high","title":"疑似房颤风险预警","message":"结构化 ML 房颤概率较高；实时异常：当前心率偏快","status":"unread","created_at":"2026-03-16T10:00:00+08:00"}}
 ```
 
 ---

@@ -46,12 +46,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onBeforeUnmount, onMounted } from 'vue'
 import { RouterView, useRoute } from 'vue-router'
 import { MagicStick } from '@element-plus/icons-vue'
 
 import { useBleStore } from '../stores/ble'
 import { useAiStore } from '../stores/ai'
+import { useAlertsStore } from '../stores/alerts'
 import AiChatDrawer from '../components/AiChatDrawer.vue'
 
 type TabItem = {
@@ -73,6 +74,7 @@ const tabs: TabItem[] = [
 const route = useRoute()
 const ble = useBleStore()
 const ai = useAiStore()
+const alerts = useAlertsStore()
 
 const currentPath = computed(() => route.path)
 
@@ -83,6 +85,12 @@ function isActive(item: TabItem) {
 onMounted(() => {
   // 挂载即订阅 BLE 事件，避免跨页切换时丢状态
   ble.ensureSubscribed()
+  void alerts.loadUnreadSnapshot()
+  void alerts.ensureConnected()
+})
+
+onBeforeUnmount(() => {
+  alerts.disconnect()
 })
 </script>
 

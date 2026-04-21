@@ -2,6 +2,7 @@ import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 
 import { api, TOKEN_KEY, USER_KEY, SESSION_VERSION_KEY, SESSION_VERSION } from '../utils/api'
+import { useAlertsStore } from './alerts'
 import { useAiStore } from './ai'
 
 export type UserProfile = {
@@ -55,6 +56,11 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   function logout() {
+    try {
+      useAlertsStore().disconnect()
+    } catch {
+      // Pinia 未初始化时忽略
+    }
     token.value = ''
     user.value = null
     localStorage.removeItem(TOKEN_KEY)

@@ -47,11 +47,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 
 import { api } from '../utils/api'
 import { formatDateTime } from '../utils/format'
+import { useAlertsStore } from '../stores/alerts'
 
 type AlertItem = {
   id: number
@@ -68,6 +69,7 @@ type AlertItem = {
 const alerts = ref<AlertItem[]>([])
 const loading = ref(false)
 const markingAll = ref(false)
+const alertStream = useAlertsStore()
 
 const unreadItems = computed(() => alerts.value.filter((a) => a.status === 'unread'))
 
@@ -87,6 +89,7 @@ async function markRead(item: AlertItem) {
   try {
     await api.post(`/alerts/${item.id}/read`)
     item.status = 'read'
+    void alertStream.loadUnreadSnapshot()
     ElMessage.success('已标记为已读')
   } catch (err: unknown) {
     const msg =
@@ -101,6 +104,7 @@ async function markAllRead() {
   try {
     await api.post('/alerts/read-all')
     alerts.value.forEach((a) => (a.status = 'read'))
+    void alertStream.loadUnreadSnapshot()
     ElMessage.success('已全部标记为已读')
   } catch (err: unknown) {
     const msg =
@@ -136,6 +140,14 @@ function triggerText(item: AlertItem) {
 }
 
 onMounted(load)
+watch(
+  () => alertStream.latestAlert?.id,
+  (nextId, prevId) => {
+    if (nextId && nextId !== prevId) {
+      void load()
+    }
+  },
+)
 </script>
 
 <style scoped>

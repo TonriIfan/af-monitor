@@ -1,5 +1,9 @@
 import copy
+import json
+import time
 
+from django.conf import settings
+from django.http import StreamingHttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils.dateparse import parse_datetime
 from rest_framework import generics, permissions, status
@@ -80,6 +84,10 @@ def _slice_list_queryset(request, queryset):
     )
     offset = _get_int_query_param(request, 'offset', 0, minimum=0)
     return queryset[offset:offset + limit]
+
+
+def _sse_event(event: str, payload: dict) -> str:
+    return f'event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n'
 
 
 class PacketIngestView(APIView):
@@ -270,6 +278,58 @@ class AlertUnreadCountView(APIView):
             .count()
         )
         return Response({"unread_count": count}, status=status.HTTP_200_OK)
+
+
+class AlertEventStreamView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        scope_user = scope_user_for_request(request)
+        poll_seconds = max(int(settings.ALERT_SSE_POLL_SECONDS), 1)
+        heartbeat_seconds = max(int(settings.ALERT_SSE_HEARTBEAT_SECONDS), poll_seconds)
+        once = request.query_params.get('once') == '1'
+
+        def build_payload():
+            queryset = alerts_queryset_for_scope(scope_user)
+            unread_count = queryset.filter(status=AlertEvent.STATUS_UNREAD).count()
+            latest_alert = queryset.first()
+            latest_payload = AlertSerializer(latest_alert).data if latest_alert else None
+            signature = (
+                unread_count,
+                latest_alert.id if latest_alert else None,
+                latest_alert.status if latest_alert else None,
+                latest_alert.read_at.isoformat() if latest_alert and latest_alert.read_at else None,
+            )
+            return signature, {
+                'unread_count': unread_count,
+                'latest_alert': latest_payload,
+            }
+
+        def event_stream():
+            signature, payload = build_payload()
+            yield _sse_event('alert_state', payload)
+            if once:
+                return
+
+            last_signature = signature
+            elapsed = 0
+            while True:
+                time.sleep(poll_seconds)
+                elapsed += poll_seconds
+                signature, payload = build_payload()
+                if signature != last_signature:
+                    last_signature = signature
+                    elapsed = 0
+                    yield _sse_event('alert_state', payload)
+                    continue
+                if elapsed >= heartbeat_seconds:
+                    elapsed = 0
+                    yield _sse_event('heartbeat', {'ts': int(time.time())})
+
+        response = StreamingHttpResponse(event_stream(), content_type='text/event-stream')
+        response['Cache-Control'] = 'no-cache'
+        response['X-Accel-Buffering'] = 'no'
+        return response
 
 
 class HomeSummaryView(APIView):

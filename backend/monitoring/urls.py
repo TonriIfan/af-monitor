@@ -2,6 +2,7 @@ from django.urls import path
 
 from .views import (
     AlertDetailView,
+    AlertEventStreamView,
     AlertListView,
     AlertReadAllView,
     AlertReadView,
@@ -50,6 +51,7 @@ urlpatterns = [
     path('reports/monthly', MonthlyReportView.as_view(), name='reports-monthly'),
     path('ml/ppg-analyze', PpgAnalyzeView.as_view(), name='ml-ppg-analyze'),
     path('alerts', AlertListView.as_view(), name='alert-list'),
+    path('alerts/events', AlertEventStreamView.as_view(), name='alert-events'),
     path('alerts/unread-count', AlertUnreadCountView.as_view(), name='alert-unread-count'),
     path('alerts/read-all', AlertReadAllView.as_view(), name='alert-read-all'),
     path('alerts/<int:alert_id>', AlertDetailView.as_view(), name='alert-detail'),

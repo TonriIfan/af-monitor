@@ -95,6 +95,7 @@ import { Bell, DataLine } from '@element-plus/icons-vue'
 import { api } from '../utils/api'
 import { formatDateTime, formatTimeShort, riskLabel, riskTagType } from '../utils/format'
 import { useAuthStore } from '../stores/auth'
+import { useAlertsStore } from '../stores/alerts'
 import { useBleStore } from '../stores/ble'
 
 type LatestMeasurement = {
@@ -106,9 +107,10 @@ type LatestMeasurement = {
 
 const auth = useAuthStore()
 const ble = useBleStore()
+const alerts = useAlertsStore()
 
 const latest = ref<LatestMeasurement | null>(null)
-const unreadCount = ref(0)
+const unreadCount = computed(() => alerts.unreadCount)
 
 const heartRate = computed<number | null>(() => {
   if (ble.lastHeartRate && ble.lastHeartRate > 0) return ble.lastHeartRate
@@ -165,18 +167,9 @@ async function loadLatest() {
   }
 }
 
-async function loadUnread() {
-  try {
-    const { data } = await api.get<{ unread_count?: number }>('/alerts/unread-count')
-    unreadCount.value = data.unread_count ?? 0
-  } catch {
-    unreadCount.value = 0
-  }
-}
-
 onMounted(() => {
   loadLatest()
-  loadUnread()
+  alerts.loadUnreadSnapshot()
 })
 </script>
 

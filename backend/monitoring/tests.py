@@ -66,6 +66,19 @@ def build_heart_rate_frame_hex(
     return f"00 00 31 00 03 {heart_rate:02X} {hrv:02X} {stress:02X} {temp_low:02X} {temp_high:02X}"
 
 
+def parse_sse_chunk(response) -> tuple[str, dict]:
+    chunk = b''.join(response.streaming_content).decode('utf-8')
+    lines = [line for line in chunk.splitlines() if line]
+    event = ''
+    payload: dict = {}
+    for line in lines:
+        if line.startswith('event:'):
+            event = line.split(':', 1)[1].strip()
+        elif line.startswith('data:'):
+            payload = json.loads(line.split(':', 1)[1].strip())
+    return event, payload
+
+
 class DummyStructuredAfEstimator:
     def predict_proba(self, rows):
         return [[0.08, 0.92] for _ in rows]
@@ -874,7 +887,7 @@ class PacketIngestApiTests(APITestCase):
                 "device_token": "push-token-001",
                 "platform": "android",
                 "app_version": "1.0.0",
-                "device_name": "Pixel",
+                "device_name": "Pixel 8",
                 "is_active": True,
             },
             format="json",
@@ -890,7 +903,10 @@ class PacketIngestApiTests(APITestCase):
         self.assertEqual(push_response.status_code, status.HTTP_200_OK)
         self.assertTrue(
             PushDeviceRegistration.objects.filter(
-                user=self.user, device_token="push-token-001"
+                user=self.user,
+                device_token="push-token-001",
+                platform="android",
+                provider="fcm",
             ).exists()
         )
         self.assertEqual(push_response.data["provider"], "fcm")
@@ -984,6 +1000,44 @@ class PacketIngestApiTests(APITestCase):
         self.assertEqual(delivery.status, AlertPushDelivery.STATUS_FAILED)
         self.assertEqual(delivery.last_error_code, "UNREGISTERED")
         self.assertFalse(registration.is_active)
+
+    def test_alert_events_requires_authentication(self):
+        self.client.credentials()
+
+        response = self.client.get("/api/v1/alerts/events?once=1")
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_alert_events_returns_initial_state(self):
+        response = self.client.get("/api/v1/alerts/events?once=1")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response["Content-Type"], "text/event-stream")
+        event, payload = parse_sse_chunk(response)
+        self.assertEqual(event, "alert_state")
+        self.assertEqual(payload["unread_count"], 0)
+        self.assertIsNone(payload["latest_alert"])
+
+    def test_alert_events_includes_latest_alert_payload(self):
+        self.client.post(
+            "/api/v1/packets",
+            {
+                "device_id": "ring-001",
+                "client_time": "2026-03-15T18:00:00+08:00",
+                "source": "wechat-miniapp",
+                "payload": {"frame_hex": "00 00 31 00 03 78 28 55 8E 0E"},
+            },
+            format="json",
+        )
+
+        response = self.client.get("/api/v1/alerts/events?once=1")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        event, payload = parse_sse_chunk(response)
+        self.assertEqual(event, "alert_state")
+        self.assertEqual(payload["unread_count"], 1)
+        self.assertEqual(payload["latest_alert"]["level"], "high")
+        self.assertEqual(payload["latest_alert"]["title"], "疑似房颤风险预警")
 
     def test_ppg_analyze_endpoint_creates_record(self):
         response = self.client.post(
