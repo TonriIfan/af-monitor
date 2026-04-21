@@ -2,6 +2,7 @@ import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 
 import { api, TOKEN_KEY, USER_KEY, SESSION_VERSION_KEY, SESSION_VERSION } from '../utils/api'
+import { useAiStore } from './ai'
 
 export type UserProfile = {
   id: number
@@ -58,6 +59,11 @@ export const useAuthStore = defineStore('auth', () => {
     user.value = null
     localStorage.removeItem(TOKEN_KEY)
     localStorage.removeItem(USER_KEY)
+    try {
+      useAiStore().reset()
+    } catch {
+      // Pinia 未初始化时忽略（例如在 SSR 场景或 store 尚未挂载）
+    }
   }
 
   return {

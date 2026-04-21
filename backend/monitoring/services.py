@@ -45,6 +45,28 @@ TEMPERATURE_STATUS_MAP = {
     3: '繁忙，不执行',
 }
 
+TRIGGER_LABEL_MAP = {
+    'realtime_tachycardia': '当前心率偏快',
+    'realtime_bradycardia': '当前心率偏慢',
+    'realtime_hrv_instability': '心率变异性波动偏大',
+    'realtime_high_stress': '压力指标偏高',
+    'realtime_low_oxygen': '血氧偏低',
+    'realtime_fever': '体温偏高',
+    'realtime_arrhythmia_cluster': '心率、血氧与变异性同时异常',
+    'window_repeated_tachycardia_30m': '近 30 分钟多次心率偏快',
+    'window_repeated_low_oxygen_30m': '近 30 分钟多次血氧偏低',
+    'window_repeated_hrv_instability_30m': '近 30 分钟多次心率变异性异常',
+    'window_repeated_high_risk_24h': '近 24 小时多次出现高风险记录',
+    'baseline_heart_rate_above_personal_baseline': '心率明显高于个人近期基线',
+    'baseline_oxygen_below_personal_baseline': '血氧低于个人近期基线',
+    'baseline_hrv_above_personal_baseline': '心率变异性高于个人近期基线',
+    'baseline_temperature_above_personal_baseline': '体温高于个人近期基线',
+    'ml_structured_af_positive': '结构化模型提示房颤风险',
+    'ml_structured_af_watch': '结构化模型提示需要持续观察',
+    'ml_structured_af_negative': '结构化模型暂未提示房颤阳性',
+    'context_unstable_wear_state': '佩戴状态不稳定，结果需谨慎解释',
+}
+
 
 @dataclass
 class PacketParseResult:
@@ -363,12 +385,24 @@ def _risk_from_score(score: Decimal) -> tuple[str, str]:
 def _rule_summary_parts(realtime_flags: list[str], window_flags: list[str], baseline_flags: list[str]) -> list[str]:
     summary_parts = []
     if realtime_flags:
-        summary_parts.append(f'实时异常: {", ".join(realtime_flags)}')
+        summary_parts.append(f'实时异常: {_trigger_labels_text(realtime_flags)}')
     if window_flags:
-        summary_parts.append(f'时间窗异常: {", ".join(window_flags)}')
+        summary_parts.append(f'时间窗异常: {_trigger_labels_text(window_flags)}')
     if baseline_flags:
-        summary_parts.append(f'基线偏移: {", ".join(baseline_flags)}')
+        summary_parts.append(f'基线偏移: {_trigger_labels_text(baseline_flags)}')
     return summary_parts
+
+
+def trigger_label(code: str) -> str:
+    return TRIGGER_LABEL_MAP.get(code, code)
+
+
+def trigger_labels(codes: list[str]) -> list[str]:
+    return [trigger_label(code) for code in codes]
+
+
+def _trigger_labels_text(codes: list[str]) -> str:
+    return '、'.join(trigger_labels(codes))
 
 
 def _ml_score_from_probability(probability: Decimal, threshold: Decimal) -> Decimal:
@@ -418,7 +452,7 @@ def analyze_measurement(measurement: Measurement) -> dict[str, Any]:
         should_alert = risk_level in {AlertEvent.LEVEL_HIGH, AlertEvent.LEVEL_CRITICAL}
         summary_parts = [ml_summary]
         summary_parts.extend(_rule_summary_parts(realtime_flags, window_flags, baseline_flags))
-        summary_parts.append(f'综合命中: {", ".join(triggers)}')
+        summary_parts.append(f'综合命中: {_trigger_labels_text(triggers)}')
     else:
         triggers = realtime_flags + window_flags + baseline_flags
         score = realtime_score + window_score + baseline_score
@@ -442,7 +476,7 @@ def analyze_measurement(measurement: Measurement) -> dict[str, Any]:
         if not summary_parts:
             summary_parts.append('未发现明显异常。')
         if triggers:
-            summary_parts.append(f'综合命中: {", ".join(triggers)}')
+            summary_parts.append(f'综合命中: {_trigger_labels_text(triggers)}')
 
     return {
         'algorithm_version': 'structured-ml-primary-v1',
@@ -903,7 +937,8 @@ def build_home_summary(user) -> dict[str, Any]:
                 'risk_level': latest_measurement.analysis_result.risk_level,
                 'risk_score': float(latest_measurement.analysis_result.risk_score),
                 'summary': latest_measurement.analysis_result.summary,
-                'triggers': latest_measurement.analysis_result.triggers,
+                'triggers': trigger_labels(latest_measurement.analysis_result.triggers),
+                'trigger_codes': latest_measurement.analysis_result.triggers,
             },
         },
         'latest_alert': None
@@ -989,7 +1024,8 @@ def build_analysis_latest(scope_user) -> dict[str, Any] | None:
             'risk_level': result.risk_level,
             'risk_score': float(result.risk_score),
             'labels': result.labels,
-            'triggers': result.triggers,
+            'triggers': trigger_labels(result.triggers),
+            'trigger_codes': result.triggers,
             'details': result.details,
             'summary': result.summary,
             'should_alert': result.should_alert,
@@ -1015,7 +1051,8 @@ def build_analysis_history(scope_user, limit: int = 20) -> list[dict[str, Any]]:
                 'risk_level': result.risk_level,
                 'risk_score': float(result.risk_score),
                 'summary': result.summary,
-                'triggers': result.triggers,
+                'triggers': trigger_labels(result.triggers),
+                'trigger_codes': result.triggers,
             }
         )
     return items
@@ -1052,7 +1089,10 @@ def build_period_report(scope_user, days: int) -> dict[str, Any]:
         'peak_risk_level': peak_risk,
         'avg_heart_rate': _safe_avg(heart_rates),
         'avg_oxygen': _safe_avg(oxygen_values),
-        'top_triggers': [{'code': code, 'count': count} for code, count in trigger_counter.most_common(5)],
+        'top_triggers': [
+            {'code': code, 'label': trigger_label(code), 'count': count}
+            for code, count in trigger_counter.most_common(5)
+        ],
         'summary': (
             f'最近 {days} 天共记录 {len(measurements)} 条测量，'
             f'产生 {len(alerts)} 条告警，最高风险等级为 {peak_risk}。'

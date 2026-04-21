@@ -5,19 +5,19 @@
     <div class="wa-card">
       <div class="wa-row-between">
         <div>
-          <div class="wa-card__title">最近 7 天心率</div>
+          <div class="wa-card__title">最近 7 天心率趋势</div>
           <div class="wa-muted" style="font-size: 12px;">共 {{ chartPointCount }} 条测量</div>
         </div>
         <el-button size="small" :loading="loadingChart" @click="loadChart">刷新</el-button>
       </div>
       <div ref="chartRef" class="chart" />
       <div v-if="!loadingChart && chartPointCount === 0" class="wa-empty">
-        暂无测量数据。到"设备"页面连接戒指后开始采集。
+        暂无测量数据。到“设备”页面连接戒指后开始采集。
       </div>
     </div>
 
     <div class="wa-row-between" style="margin: 10px 0 6px;">
-      <div class="wa-section-title" style="margin: 0;">列表</div>
+      <div class="wa-section-title" style="margin: 0;">测量列表</div>
       <el-button size="small" :loading="loading" @click="loadMeasurements">刷新</el-button>
     </div>
 
@@ -29,9 +29,9 @@
       <div class="wa-row-between">
         <div>
           <div class="measurement__hr">
-            <span v-if="m.parsed?.heartRate">{{ m.parsed.heartRate }}<span class="measurement__unit">bpm</span></span>
-            <span v-else-if="m.parsed?.oxygen">{{ m.parsed.oxygen }}<span class="measurement__unit">%SpO₂</span></span>
-            <span v-else class="wa-muted" style="font-size: 16px;">{{ m.packet_kind }}</span>
+            <span v-if="m.parsed?.heartRate">{{ m.parsed.heartRate }}<span class="measurement__unit">次/分钟</span></span>
+            <span v-else-if="m.parsed?.oxygen">{{ m.parsed.oxygen }}<span class="measurement__unit">%</span></span>
+            <span v-else class="wa-muted" style="font-size: 16px;">{{ packetKindLabel(m.packet_kind) }}</span>
           </div>
           <div class="wa-muted" style="font-size: 12px;">
             {{ formatDateTime(m.measured_at) }}
@@ -45,11 +45,11 @@
         {{ m.analysis.summary }}
       </div>
       <div v-if="m.parsed" class="measurement__fields">
-        <span v-if="m.parsed.heartRate != null"><b>心率</b> {{ m.parsed.heartRate }}</span>
-        <span v-if="m.parsed.hrv != null"><b>HRV</b> {{ m.parsed.hrv }}</span>
-        <span v-if="m.parsed.oxygen != null"><b>SpO₂</b> {{ m.parsed.oxygen }}</span>
-        <span v-if="m.parsed.temperature != null"><b>温度</b> {{ m.parsed.temperature }}</span>
-        <span v-if="m.parsed.wearStatusText"><b>佩戴</b> {{ m.parsed.wearStatusText }}</span>
+        <span v-if="m.parsed.heartRate != null"><b>心率</b> {{ m.parsed.heartRate }} 次/分钟</span>
+        <span v-if="m.parsed.hrv != null"><b>心率变异性</b> {{ m.parsed.hrv }}</span>
+        <span v-if="m.parsed.oxygen != null"><b>血氧饱和度</b> {{ m.parsed.oxygen }}%</span>
+        <span v-if="m.parsed.temperature != null"><b>体表温度</b> {{ m.parsed.temperature }}℃</span>
+        <span v-if="m.parsed.wearStatusText"><b>佩戴状态</b> {{ m.parsed.wearStatusText }}</span>
       </div>
     </div>
   </div>
@@ -147,7 +147,7 @@ function renderChart(points: Array<{ time?: string; value?: number; measured_at?
     },
     yAxis: {
       type: 'value',
-      name: 'bpm',
+      name: '次/分钟',
       nameTextStyle: { color: '#9ca3af', fontSize: 11 },
       axisLabel: { fontSize: 11, color: '#9ca3af' },
       splitLine: { lineStyle: { color: 'rgba(156,163,175,0.18)' } },
@@ -164,6 +164,23 @@ function renderChart(points: Array<{ time?: string; value?: number; measured_at?
       },
     ],
   })
+}
+
+function packetKindLabel(kind: string) {
+  const map: Record<string, string> = {
+    heart_rate: '心率测量',
+    blood_oxygen: '血氧测量',
+    blood_oxygen_complete: '血氧采集完成',
+    temperature: '体温测量',
+    battery: '电量信息',
+    battery_state: '充电状态',
+    time_sync: '时间同步',
+    device_time: '设备时间',
+    unsupported: '暂不支持的数据',
+    invalid: '无效数据',
+    unknown: '未知数据',
+  }
+  return map[kind] || kind || '--'
 }
 
 const handleResize = () => chart?.resize()

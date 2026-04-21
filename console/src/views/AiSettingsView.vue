@@ -10,7 +10,9 @@
           </div>
           <div class="filter-row">
             <el-button @click="loadSettings">重置</el-button>
-            <el-button type="primary" :loading="saving" @click="saveSettings">部署策略</el-button>
+            <el-button type="primary" :loading="saving" @click="saveSettings">
+              保存设置
+            </el-button>
           </div>
         </div>
 
@@ -43,8 +45,8 @@
           </el-form-item>
           
           <el-form-item label="AUTH / API 密钥">
-            <el-input v-model="form.api_key" show-password type="password" placeholder="KEEP EMPTY TO REMAIN UNCHANGED" />
-            <p class="panel__helper" v-if="form.has_api_key">
+            <el-input v-model="form.api_key" show-password type="password" placeholder="留空表示不修改现有密钥" />
+            <p v-if="form.has_api_key" class="form-helper">
               [SYSTEM] 密钥已加密存储。掩码：{{ form.api_key_masked }}
             </p>
           </el-form-item>
@@ -241,3 +243,13 @@ async function testSettings() {
 
 onMounted(loadSettings)
 </script>
+
+<style scoped>
+.form-helper {
+  margin: 0.5rem 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.6;
+  word-break: break-all;
+}
+</style>

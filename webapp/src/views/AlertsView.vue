@@ -33,8 +33,8 @@
       </div>
       <div class="alert__title">{{ item.title || '异常告警' }}</div>
       <div class="alert__summary wa-muted">{{ item.message || '--' }}</div>
-      <div v-if="item.trigger_codes?.length" class="alert__triggers wa-muted">
-        触发：{{ item.trigger_codes.join(', ') }}
+      <div v-if="triggerText(item)" class="alert__triggers wa-muted">
+        触发：{{ triggerText(item) }}
       </div>
       <div v-if="item.device_id" class="wa-muted" style="font-size: 12px;">
         设备：<code>{{ item.device_id }}</code>
@@ -61,6 +61,7 @@ type AlertItem = {
   created_at: string
   message?: string
   trigger_codes?: string[]
+  trigger_labels?: string[]
   device_id?: string
 }
 
@@ -127,6 +128,11 @@ function levelTag(level: string): '' | 'success' | 'warning' | 'danger' | 'info'
     high: 'danger',
     critical: 'danger',
   } as const)[level as 'low' | 'moderate' | 'high' | 'critical'] || 'info'
+}
+
+function triggerText(item: AlertItem) {
+  const labels = item.trigger_labels?.length ? item.trigger_labels : item.trigger_codes
+  return labels?.length ? labels.join('、') : ''
 }
 
 onMounted(load)

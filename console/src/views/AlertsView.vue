@@ -30,7 +30,7 @@
         <el-table-column prop="message" label="说明" min-width="280" />
         <el-table-column label="触发规则" min-width="220">
           <template #default="{ row }">
-            {{ row.trigger_codes?.join(', ') || '--' }}
+            {{ (row.trigger_labels || row.trigger_codes)?.join('、') || '--' }}
           </template>
         </el-table-column>
         <el-table-column label="时间" min-width="180">

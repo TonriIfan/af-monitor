@@ -5,7 +5,31 @@
     </RouterView>
     <nav class="wa-tabbar">
       <RouterLink
-        v-for="item in tabs"
+        v-for="item in tabs.slice(0, 2)"
+        :key="item.name"
+        :to="item.to"
+        class="wa-tab"
+        :class="{ 'wa-tab--active': isActive(item) }"
+      >
+        <el-icon :size="22">
+          <component :is="item.icon" />
+        </el-icon>
+        <span class="wa-tab__label">{{ item.label }}</span>
+      </RouterLink>
+
+      <!-- AI Assistant (Standard Tab Style) -->
+      <button
+        type="button"
+        class="wa-tab"
+        :class="{ 'wa-tab--active': ai.isOpen }"
+        @click="ai.open()"
+      >
+        <el-icon :size="22"><MagicStick /></el-icon>
+        <span class="wa-tab__label">AI 助手</span>
+      </button>
+
+      <RouterLink
+        v-for="item in tabs.slice(2)"
         :key="item.name"
         :to="item.to"
         class="wa-tab"
@@ -17,14 +41,18 @@
         <span class="wa-tab__label">{{ item.label }}</span>
       </RouterLink>
     </nav>
+    <AiChatDrawer />
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
 import { RouterView, useRoute } from 'vue-router'
+import { MagicStick } from '@element-plus/icons-vue'
 
 import { useBleStore } from '../stores/ble'
+import { useAiStore } from '../stores/ai'
+import AiChatDrawer from '../components/AiChatDrawer.vue'
 
 type TabItem = {
   name: string
@@ -44,6 +72,7 @@ const tabs: TabItem[] = [
 
 const route = useRoute()
 const ble = useBleStore()
+const ai = useAiStore()
 
 const currentPath = computed(() => route.path)
 
@@ -89,6 +118,9 @@ onMounted(() => {
   font-size: 12px;
   padding: 6px 0;
   transition: color 0.15s ease;
+  background: transparent;
+  border: none;
+  cursor: pointer;
 }
 .wa-tab:hover {
   color: var(--wa-fg);

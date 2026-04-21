@@ -365,10 +365,15 @@ class PacketIngestApiTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         triggers = response.data["analysis"]["triggers"]
-        self.assertIn("window_repeated_tachycardia_30m", triggers)
-        self.assertIn("baseline_heart_rate_above_personal_baseline", triggers)
+        trigger_codes = response.data["analysis"]["trigger_codes"]
+        self.assertIn("近 30 分钟多次心率偏快", triggers)
+        self.assertIn("心率明显高于个人近期基线", triggers)
+        self.assertIn("window_repeated_tachycardia_30m", trigger_codes)
+        self.assertIn("baseline_heart_rate_above_personal_baseline", trigger_codes)
         self.assertIn("window_stats", response.data["analysis"]["details"])
         self.assertIn("baselines", response.data["analysis"]["details"])
+        self.assertIn("近 30 分钟多次心率偏快", response.data["analysis"]["summary"])
+        self.assertNotIn("window_repeated_tachycardia_30m", response.data["analysis"]["summary"])
 
     def test_measurement_llm_insight_returns_prompt_when_provider_disabled(self):
         ingest = self.client.post(
@@ -1161,8 +1166,9 @@ class PacketIngestApiTests(APITestCase):
             response.data["analysis"]["algorithm_version"], "structured-ml-primary-v1"
         )
         self.assertIn(
-            "window_repeated_tachycardia_30m", response.data["analysis"]["triggers"]
+            "window_repeated_tachycardia_30m", response.data["analysis"]["trigger_codes"]
         )
+        self.assertIn("近 30 分钟多次心率偏快", response.data["analysis"]["triggers"])
         self.assertIn("ml", response.data["analysis"]["details"])
         self.assertTrue(response.data["analysis"]["details"]["ml"]["enabled"])
         self.assertFalse(response.data["analysis"]["details"]["ml"]["available"])
@@ -1237,8 +1243,9 @@ class PacketIngestApiTests(APITestCase):
         self.assertIn("probability", ml_details)
         self.assertIn("features", ml_details)
         self.assertIn(
-            "ml_structured_af_positive", response.data["analysis"]["triggers"]
+            "ml_structured_af_positive", response.data["analysis"]["trigger_codes"]
         )
+        self.assertIn("结构化模型提示房颤风险", response.data["analysis"]["triggers"])
         self.assertEqual(response.data["analysis"]["risk_level"], "critical")
         self.assertEqual(response.data["analysis"]["risk_score"], 0.88)
 

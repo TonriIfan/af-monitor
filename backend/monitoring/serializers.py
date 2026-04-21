@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
 from .models import AiSettings, AlertEvent, Measurement, PpgAnalysisRecord, PushDeviceRegistration, SymptomFeedback
+from .services import trigger_labels
 
 
 class PacketIngestSerializer(serializers.Serializer):
@@ -51,7 +52,8 @@ class MeasurementSerializer(serializers.ModelSerializer):
             'risk_level': result.risk_level,
             'risk_score': float(result.risk_score),
             'labels': result.labels,
-            'triggers': result.triggers,
+            'triggers': trigger_labels(result.triggers),
+            'trigger_codes': result.triggers,
             'details': result.details,
             'summary': result.summary,
             'should_alert': result.should_alert,
@@ -79,6 +81,7 @@ class AlertSerializer(serializers.ModelSerializer):
     measurement_id = serializers.IntegerField(source='measurement.id', read_only=True)
     user_id = serializers.IntegerField(source='user.id', read_only=True)
     username = serializers.CharField(source='user.username', read_only=True, default='')
+    trigger_labels = serializers.SerializerMethodField()
 
     class Meta:
         model = AlertEvent
@@ -92,11 +95,15 @@ class AlertSerializer(serializers.ModelSerializer):
             'title',
             'message',
             'trigger_codes',
+            'trigger_labels',
             'status',
             'is_read',
             'read_at',
             'created_at',
         ]
+
+    def get_trigger_labels(self, obj):
+        return trigger_labels(obj.trigger_codes)
 
 
 class AlertStateUpdateSerializer(serializers.ModelSerializer):

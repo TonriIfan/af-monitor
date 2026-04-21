@@ -327,12 +327,35 @@ class MeasurementLlmInsightView(APIView):
 class AiChatView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
+    MAX_HISTORY_TURNS = 8
+    MAX_HISTORY_CHARS = 2000
+
+    def _normalize_history(self, raw_history):
+        if not isinstance(raw_history, list):
+            return []
+        normalized: list[dict[str, str]] = []
+        for item in raw_history:
+            if not isinstance(item, dict):
+                continue
+            role = item.get("role")
+            content = item.get("content")
+            if role not in {"user", "assistant"}:
+                continue
+            if not isinstance(content, str):
+                continue
+            text = content.strip()
+            if not text:
+                continue
+            normalized.append({"role": role, "content": text[: self.MAX_HISTORY_CHARS]})
+        return normalized[-self.MAX_HISTORY_TURNS * 2 :]
+
     def post(self, request):
         message = (request.data.get("message") or "").strip()
         if not message:
             return Response(
                 {"detail": "message 不能为空。"}, status=status.HTTP_400_BAD_REQUEST
             )
+        history = self._normalize_history(request.data.get("history"))
         latest_analysis = build_analysis_latest(request.user)
         trends = build_measurement_trends(request.user)
         unread_count = (
@@ -351,8 +374,18 @@ class AiChatView(APIView):
                 "unread_alert_count": unread_count,
             },
             message,
+            history=history,
         )
-        return Response(payload, status=status.HTTP_200_OK)
+        response_data = {
+            "content": payload.get("content", ""),
+            "source": payload.get("source"),
+            "available": payload.get("available", False),
+        }
+        if payload.get("source") == "llm" and payload.get("model"):
+            response_data["model"] = payload["model"]
+        if payload.get("error"):
+            response_data["error"] = payload["error"]
+        return Response(response_data, status=status.HTTP_200_OK)
 
 
 class AiSettingsView(APIView):
