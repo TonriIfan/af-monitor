@@ -1,5 +1,27 @@
-# Local environments
+# Python / virtualenv
 .venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node / package manager
+**/node_modules/
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Local config / databases / temp outputs
+backend/.env
+backend/db.sqlite3
+backend/.tmp-tests/
+*.log
+
+# OS / editor
+.DS_Store
+Thumbs.db
 
 # Agent / local notes
 .claude/
@@ -9,3 +31,7 @@ claude.md
 study/
 Android/
 .tmp_study/
+
+# Keep tracked frontend build artifacts
+!console/dist/
+!webapp/dist/

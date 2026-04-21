@@ -5,6 +5,7 @@ from .models import AiSettings, AlertEvent, Measurement, PpgAnalysisRecord, Push
 
 class PacketIngestSerializer(serializers.Serializer):
     device_id = serializers.CharField(max_length=64)
+    user_id = serializers.IntegerField(required=False, write_only=True)
     client_time = serializers.DateTimeField()
     source = serializers.CharField(max_length=64, default='wechat-miniapp')
     session_key = serializers.CharField(max_length=128, required=False, allow_blank=True)

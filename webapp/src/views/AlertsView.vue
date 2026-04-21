@@ -32,7 +32,10 @@
         <el-tag v-else type="info" size="small">已读</el-tag>
       </div>
       <div class="alert__title">{{ item.title || '异常告警' }}</div>
-      <div class="alert__summary wa-muted">{{ item.summary || item.trigger_reason || '--' }}</div>
+      <div class="alert__summary wa-muted">{{ item.message || '--' }}</div>
+      <div v-if="item.trigger_codes?.length" class="alert__triggers wa-muted">
+        触发：{{ item.trigger_codes.join(', ') }}
+      </div>
       <div v-if="item.device_id" class="wa-muted" style="font-size: 12px;">
         设备：<code>{{ item.device_id }}</code>
       </div>
@@ -56,8 +59,8 @@ type AlertItem = {
   level: 'low' | 'moderate' | 'high' | 'critical' | string
   status: 'unread' | 'read' | string
   created_at: string
-  summary?: string
-  trigger_reason?: string
+  message?: string
+  trigger_codes?: string[]
   device_id?: string
 }
 
@@ -138,6 +141,12 @@ onMounted(load)
   font-size: 13px;
   line-height: 1.55;
   margin-bottom: 6px;
+}
+.alert__triggers {
+  font-size: 12px;
+  margin-bottom: 6px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  word-break: break-all;
 }
 .alert--read {
   opacity: 0.75;

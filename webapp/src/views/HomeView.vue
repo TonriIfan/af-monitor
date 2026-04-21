@@ -167,8 +167,8 @@ async function loadLatest() {
 
 async function loadUnread() {
   try {
-    const { data } = await api.get<{ count?: number; unread?: number }>('/alerts/unread-count')
-    unreadCount.value = data.count ?? data.unread ?? 0
+    const { data } = await api.get<{ unread_count?: number }>('/alerts/unread-count')
+    unreadCount.value = data.unread_count ?? 0
   } catch {
     unreadCount.value = 0
   }

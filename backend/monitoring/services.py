@@ -17,7 +17,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
 from accounts.location import build_login_location_payload
-from devices.models import Device
+from devices.models import Device, DeviceBinding
 
 from .ml import analyze_structured_measurement_window
 from .models import AlertEvent, AnalysisResult, Measurement, RawPacket, UploadSession
@@ -473,11 +473,32 @@ def _resolve_client_time(validated_data: dict[str, Any]):
     return client_time
 
 
-def _resolve_user(device: Device, request_user):
+def _resolve_user(device: Device, request_user, validated_data: dict[str, Any]):
+    requested_user_id = validated_data.get('user_id')
+    if request_user is not None and getattr(request_user, 'role', None) == User.Role.ADMIN and requested_user_id:
+        return get_object_or_404(User.objects.exclude(role=User.Role.ADMIN), pk=requested_user_id)
     if request_user is not None:
         return request_user
     binding = device.bindings.filter(is_active=True).select_related('user').first()
     return binding.user if binding else None
+
+
+def _ensure_simulator_binding(device: Device, user, validated_data: dict[str, Any]):
+    if not user or getattr(user, 'role', None) == User.Role.ADMIN:
+        return
+    if validated_data.get('source') != 'console-simulator' or not validated_data.get('user_id'):
+        return
+
+    DeviceBinding.objects.filter(device=device, is_active=True).exclude(user=user).update(
+        is_active=False,
+        unbound_at=timezone.now(),
+    )
+    DeviceBinding.objects.get_or_create(
+        user=user,
+        device=device,
+        is_active=True,
+        defaults={'alias': '控制台测试设备'},
+    )
 
 
 def _get_or_create_upload_session(device: Device, user, validated_data: dict[str, Any]):
@@ -559,7 +580,8 @@ def ingest_packet(validated_data: dict[str, Any], raw_payload: dict[str, Any], r
             'source': validated_data.get('source', 'wechat-miniapp'),
         },
     )
-    user = _resolve_user(device, request_user)
+    user = _resolve_user(device, request_user, validated_data)
+    _ensure_simulator_binding(device, user, validated_data)
     upload_session = _get_or_create_upload_session(device, user, validated_data)
     parse_result = parse_packet(validated_data['payload'])
     client_time = _resolve_client_time(validated_data)

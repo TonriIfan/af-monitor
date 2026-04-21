@@ -115,7 +115,8 @@ async function loadChart() {
   loadingChart.value = true
   try {
     const { data } = await api.get<ChartResponse>('/measurements/chart', {
-      params: { metric: 'heartRate', range: '7d' },
+      // 后端接受 snake_case 的 metric 名：heart_rate / oxygen / temperature
+      params: { metric: 'heart_rate', range: '7d' },
     })
     const points = data.points ?? []
     chartPointCount.value = points.length

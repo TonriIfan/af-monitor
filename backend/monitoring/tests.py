@@ -131,6 +131,76 @@ class PacketIngestApiTests(APITestCase):
         # 登录态下的上报应归属到请求用户，而不是回落到设备绑定关系
         self.assertEqual(response.data["user_id"], self.user.id)
 
+    def test_admin_can_ingest_simulated_packet_for_selected_user(self):
+        admin = get_user_model().objects.create_user(
+            username="manager-sim",
+            password="pass12345",
+            role=get_user_model().Role.ADMIN,
+            is_staff=True,
+            is_superuser=True,
+        )
+        admin_token = Token.objects.create(user=admin)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {admin_token.key}")
+
+        response = self.client.post(
+            "/api/v1/packets",
+            {
+                "user_id": self.user.id,
+                "device_id": "sim-ring-001",
+                "client_time": "2026-03-15T14:26:00+08:00",
+                "source": "console-simulator",
+                "payload": {
+                    "frame_hex": "00 00 31 00 03 78 28 55 8E 0E",
+                },
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["user_id"], self.user.id)
+        self.assertTrue(
+            DeviceBinding.objects.filter(
+                user=self.user,
+                device__device_id="sim-ring-001",
+                is_active=True,
+            ).exists()
+        )
+
+        scoped_response = self.client.get(f"/api/v1/measurements?user_id={self.user.id}")
+
+        self.assertEqual(scoped_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(scoped_response.data), 1)
+        self.assertEqual(scoped_response.data[0]["device_id"], "sim-ring-001")
+
+    def test_non_admin_packet_ingest_cannot_spoof_user_id(self):
+        other_user = get_user_model().objects.create_user(
+            username="other-monitor-user",
+            password="pass12345",
+        )
+
+        response = self.client.post(
+            "/api/v1/packets",
+            {
+                "user_id": other_user.id,
+                "device_id": "ring-001",
+                "client_time": "2026-03-15T14:27:00+08:00",
+                "source": "wechat-miniapp",
+                "payload": {
+                    "frame_hex": "00 00 31 00 03 5A 18 20 6E 0E",
+                },
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["user_id"], self.user.id)
+        self.assertFalse(
+            Measurement.objects.filter(
+                device__device_id="ring-001",
+                user=other_user,
+            ).exists()
+        )
+
     def test_packet_ingest_preserves_raw_payload_and_returns_analysis(self):
         self.client.post(
             "/api/v1/packets",

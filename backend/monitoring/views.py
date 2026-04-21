@@ -207,7 +207,11 @@ class AlertReadAllView(APIView):
     def post(self, request):
         from django.utils import timezone
 
-        scope_user = scope_user_for_request(request) or request.user
+        # 保留 scope_user_for_request 的原始返回值：admin 无 user_id 查询参数时
+        # 返回 None（代表"全部用户"），非 admin 返回 request.user。
+        # 之前写成 `or request.user` 会在 admin 场景把 admin 自己塞回 scope_user，
+        # 随后 alerts_queryset_for_scope 对 admin 返回 .none()，永远更新 0 条。
+        scope_user = scope_user_for_request(request)
         queryset = alerts_queryset_for_scope(scope_user).filter(
             status=AlertEvent.STATUS_UNREAD
         )
@@ -227,7 +231,9 @@ class AlertUnreadCountView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        scope_user = scope_user_for_request(request) or request.user
+        # 同 AlertReadAllView 的说明：保留 scope_user 原始返回，避免 admin
+        # 被误塞回成自身作用域后被 alerts_queryset_for_scope 裁为空。
+        scope_user = scope_user_for_request(request)
         count = (
             alerts_queryset_for_scope(scope_user)
             .filter(status=AlertEvent.STATUS_UNREAD)
