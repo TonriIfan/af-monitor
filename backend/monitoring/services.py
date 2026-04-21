@@ -20,7 +20,16 @@ from accounts.location import build_login_location_payload
 from devices.models import Device, DeviceBinding
 
 from .ml import analyze_structured_measurement_window
-from .models import AlertEvent, AnalysisResult, Measurement, RawPacket, UploadSession
+from .models import (
+    AlertEvent,
+    AlertPushDelivery,
+    AnalysisResult,
+    Measurement,
+    PushDeviceRegistration,
+    RawPacket,
+    UploadSession,
+)
+from .push import PushSendResult, get_push_provider
 
 User = get_user_model()
 
@@ -573,6 +582,173 @@ def _build_dedupe_key(measurement: Measurement, analysis_result: AnalysisResult)
     return sha1(repr(fingerprint).encode('utf-8')).hexdigest()
 
 
+def build_alert_push_payload(alert: AlertEvent) -> dict[str, Any]:
+    measurement_id = alert.measurement_id or 0
+    return {
+        'notification': {
+            'title': alert.title,
+            'body': alert.message,
+        },
+        'data': {
+            'type': 'alert',
+            'alert_id': str(alert.id),
+            'level': alert.level,
+            'device_id': alert.device.device_id,
+            'measurement_id': str(measurement_id),
+            'created_at': alert.created_at.isoformat(),
+            'route': f'/alerts/{alert.id}',
+        },
+    }
+
+
+def enqueue_alert_push_deliveries(alert: AlertEvent) -> int:
+    if not alert.user_id:
+        return 0
+
+    registrations = PushDeviceRegistration.objects.filter(user_id=alert.user_id, is_active=True)
+    created_count = 0
+    for registration in registrations:
+        _, created = AlertPushDelivery.objects.get_or_create(
+            alert=alert,
+            registration=registration,
+            defaults={
+                'user_id': alert.user_id,
+                'provider': registration.provider,
+                'platform': registration.platform,
+                'device_token': registration.device_token,
+                'max_attempts': settings.ALERT_PUSH_MAX_ATTEMPTS,
+            },
+        )
+        if created:
+            created_count += 1
+    return created_count
+
+
+def _delivery_retry_delay_minutes(attempts: int) -> int:
+    schedule = [1, 5, 15]
+    index = max(0, min(attempts - 1, len(schedule) - 1))
+    return schedule[index]
+
+
+def dispatch_alert_push_delivery(delivery: AlertPushDelivery, provider=None) -> AlertPushDelivery:
+    now = timezone.now()
+    registration = delivery.registration
+    if registration is None:
+        delivery.status = AlertPushDelivery.STATUS_SKIPPED
+        delivery.last_error_code = 'registration_missing'
+        delivery.last_error = '关联的推送设备已不存在。'
+        delivery.next_attempt_at = now
+        delivery.save(
+            update_fields=[
+                'status',
+                'last_error_code',
+                'last_error',
+                'next_attempt_at',
+                'updated_at',
+            ]
+        )
+        return delivery
+
+    if not registration.is_active:
+        delivery.status = AlertPushDelivery.STATUS_SKIPPED
+        delivery.last_error_code = 'registration_inactive'
+        delivery.last_error = '推送设备已停用。'
+        delivery.next_attempt_at = now
+        delivery.save(
+            update_fields=[
+                'status',
+                'last_error_code',
+                'last_error',
+                'next_attempt_at',
+                'updated_at',
+            ]
+        )
+        return delivery
+
+    if provider is None:
+        provider = get_push_provider(delivery.provider)
+
+    payload = build_alert_push_payload(delivery.alert)
+    result: PushSendResult = provider.send_alert(delivery, payload)
+    delivery.attempts += 1
+
+    if result.success:
+        delivery.status = AlertPushDelivery.STATUS_SENT
+        delivery.provider_message_id = result.message_id
+        delivery.last_error_code = ''
+        delivery.last_error = ''
+        delivery.sent_at = now
+        delivery.next_attempt_at = now
+        delivery.save(
+            update_fields=[
+                'status',
+                'attempts',
+                'provider_message_id',
+                'last_error_code',
+                'last_error',
+                'sent_at',
+                'next_attempt_at',
+                'updated_at',
+            ]
+        )
+        return delivery
+
+    delivery.last_error_code = result.error_code
+    delivery.last_error = result.error_message
+    if result.invalid_token:
+        registration.is_active = False
+        registration.save(update_fields=['is_active'])
+        delivery.status = AlertPushDelivery.STATUS_FAILED
+        delivery.next_attempt_at = now
+    elif result.retryable and delivery.attempts < delivery.max_attempts:
+        delivery.status = AlertPushDelivery.STATUS_PENDING
+        delivery.next_attempt_at = now + timezone.timedelta(
+            minutes=_delivery_retry_delay_minutes(delivery.attempts)
+        )
+    elif result.error_code == 'fcm_disabled':
+        delivery.status = AlertPushDelivery.STATUS_SKIPPED
+        delivery.next_attempt_at = now
+    else:
+        delivery.status = AlertPushDelivery.STATUS_FAILED
+        delivery.next_attempt_at = now
+
+    delivery.save(
+        update_fields=[
+            'status',
+            'attempts',
+            'last_error_code',
+            'last_error',
+            'next_attempt_at',
+            'updated_at',
+        ]
+    )
+    return delivery
+
+
+def dispatch_pending_alert_pushes(limit: int = 100, provider=None) -> dict[str, int]:
+    queryset = (
+        AlertPushDelivery.objects.select_related('alert__device', 'registration')
+        .filter(
+            status=AlertPushDelivery.STATUS_PENDING,
+            next_attempt_at__lte=timezone.now(),
+        )
+        .order_by('next_attempt_at', 'id')[:limit]
+    )
+
+    summary = {
+        'processed': 0,
+        'sent': 0,
+        'failed': 0,
+        'skipped': 0,
+        'pending': 0,
+    }
+    for delivery in queryset:
+        dispatch_alert_push_delivery(delivery, provider=provider)
+        summary['processed'] += 1
+        summary[delivery.status] += 1
+    return summary
+
+
 def maybe_create_alert(measurement: Measurement, analysis_result: AnalysisResult):
     if not analysis_result.should_alert:
         return None
@@ -592,7 +768,7 @@ def maybe_create_alert(measurement: Measurement, analysis_result: AnalysisResult
     if analysis_result.risk_level == AlertEvent.LEVEL_CRITICAL:
         title = '高危房颤风险预警'
 
-    return AlertEvent.objects.create(
+    alert = AlertEvent.objects.create(
         device=measurement.device,
         user=measurement.user,
         measurement=measurement,
@@ -603,6 +779,8 @@ def maybe_create_alert(measurement: Measurement, analysis_result: AnalysisResult
         trigger_codes=analysis_result.triggers,
         dedupe_key=dedupe_key,
     )
+    transaction.on_commit(lambda: enqueue_alert_push_deliveries(alert))
+    return alert
 
 
 @transaction.atomic
@@ -712,7 +890,9 @@ def measurements_queryset_for_scope(scope_user=None):
 
 
 def alerts_queryset_for_scope(scope_user=None):
-    queryset = AlertEvent.objects.select_related('device', 'measurement', 'analysis_result', 'user')
+    queryset = AlertEvent.objects.select_related(
+        'device', 'measurement', 'analysis_result', 'user'
+    ).prefetch_related('push_deliveries')
     if scope_user is None:
         return queryset.exclude(user__role=User.Role.ADMIN)
     if getattr(scope_user, 'role', None) == User.Role.ADMIN:

@@ -51,6 +51,36 @@ from .services import (
     scope_user_for_request,
 )
 
+DEFAULT_LIST_LIMIT = 100
+MAX_LIST_LIMIT = 500
+
+
+def _get_int_query_param(request, key, default, minimum=0, maximum=None):
+    raw_value = request.query_params.get(key)
+    if raw_value in {None, ''}:
+        return default
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError):
+        return default
+    if value < minimum:
+        return default
+    if maximum is not None:
+        value = min(value, maximum)
+    return value
+
+
+def _slice_list_queryset(request, queryset):
+    limit = _get_int_query_param(
+        request,
+        'limit',
+        DEFAULT_LIST_LIMIT,
+        minimum=1,
+        maximum=MAX_LIST_LIMIT,
+    )
+    offset = _get_int_query_param(request, 'offset', 0, minimum=0)
+    return queryset[offset:offset + limit]
+
 
 class PacketIngestView(APIView):
     permission_classes = [permissions.AllowAny]
@@ -119,7 +149,7 @@ class MeasurementListView(generics.ListAPIView):
             parsed = parse_datetime(end)
             if parsed:
                 queryset = queryset.filter(measured_at__lte=parsed)
-        return queryset
+        return _slice_list_queryset(self.request, queryset)
 
 
 class MeasurementLatestView(generics.RetrieveAPIView):
@@ -169,7 +199,7 @@ class AlertListView(generics.ListAPIView):
         device_id = self.request.query_params.get("device_id")
         if device_id:
             queryset = queryset.filter(device__device_id=device_id)
-        return queryset
+        return _slice_list_queryset(self.request, queryset)
 
 
 class AlertDetailView(generics.RetrieveAPIView):
@@ -448,6 +478,7 @@ class PushRegisterDeviceView(APIView):
             device_token=serializer.validated_data["device_token"],
             defaults={
                 "user": request.user,
+                "provider": serializer.validated_data.get("provider", PushDeviceRegistration.PROVIDER_FCM),
                 "platform": serializer.validated_data["platform"],
                 "app_version": serializer.validated_data.get("app_version", ""),
                 "device_name": serializer.validated_data.get("device_name", ""),

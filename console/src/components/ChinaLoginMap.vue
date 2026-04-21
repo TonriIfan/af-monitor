@@ -14,7 +14,12 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import * as echarts from 'echarts'
+import { EffectScatterChart } from 'echarts/charts'
+import { GeoComponent, TooltipComponent } from 'echarts/components'
+import { init, registerMap, use } from 'echarts/core'
+import { CanvasRenderer } from 'echarts/renderers'
+
+use([GeoComponent, TooltipComponent, EffectScatterChart, CanvasRenderer])
 
 type LoginLocation = {
   country: string
@@ -55,7 +60,7 @@ const locatedUsers = computed(() =>
   ),
 )
 
-let chart: echarts.ECharts | null = null
+let chart: ReturnType<typeof init> | null = null
 let mapReady = false
 let resizeObserver: ResizeObserver | null = null
 
@@ -66,7 +71,7 @@ async function ensureMapLoaded() {
     throw new Error('map-load-failed')
   }
   const geoJson = await response.json()
-  echarts.registerMap(MAP_NAME, geoJson)
+  registerMap(MAP_NAME, geoJson)
   mapReady = true
 }
 
@@ -89,7 +94,7 @@ function seriesData() {
 async function renderChart() {
   if (!chartRef.value) return
   if (!chart) {
-    chart = echarts.init(chartRef.value)
+    chart = init(chartRef.value)
   }
 
   try {

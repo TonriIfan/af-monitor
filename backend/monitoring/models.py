@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 from devices.models import Device
 
@@ -247,6 +248,10 @@ class SymptomFeedback(models.Model):
 
 
 class PushDeviceRegistration(models.Model):
+    PROVIDER_FCM = 'fcm'
+    PROVIDER_CHOICES = [
+        (PROVIDER_FCM, 'fcm'),
+    ]
     PLATFORM_IOS = 'ios'
     PLATFORM_ANDROID = 'android'
     PLATFORM_HARMONY = 'harmony'
@@ -261,6 +266,7 @@ class PushDeviceRegistration(models.Model):
         on_delete=models.CASCADE,
         related_name='push_devices',
     )
+    provider = models.CharField(max_length=24, choices=PROVIDER_CHOICES, default=PROVIDER_FCM)
     device_token = models.CharField(max_length=255, unique=True)
     platform = models.CharField(max_length=16, choices=PLATFORM_CHOICES)
     app_version = models.CharField(max_length=32, blank=True)
@@ -271,6 +277,63 @@ class PushDeviceRegistration(models.Model):
 
     class Meta:
         ordering = ['-last_seen_at']
+
+
+class AlertPushDelivery(models.Model):
+    PROVIDER_FCM = 'fcm'
+    PROVIDER_CHOICES = [
+        (PROVIDER_FCM, 'fcm'),
+    ]
+    STATUS_PENDING = 'pending'
+    STATUS_SENT = 'sent'
+    STATUS_FAILED = 'failed'
+    STATUS_SKIPPED = 'skipped'
+    STATUS_CHOICES = [
+        (STATUS_PENDING, 'pending'),
+        (STATUS_SENT, 'sent'),
+        (STATUS_FAILED, 'failed'),
+        (STATUS_SKIPPED, 'skipped'),
+    ]
+
+    alert = models.ForeignKey(
+        AlertEvent,
+        on_delete=models.CASCADE,
+        related_name='push_deliveries',
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='alert_push_deliveries',
+    )
+    registration = models.ForeignKey(
+        PushDeviceRegistration,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='alert_deliveries',
+    )
+    provider = models.CharField(max_length=24, choices=PROVIDER_CHOICES, default=PROVIDER_FCM)
+    platform = models.CharField(max_length=16, blank=True)
+    device_token = models.CharField(max_length=255)
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    attempts = models.PositiveSmallIntegerField(default=0)
+    max_attempts = models.PositiveSmallIntegerField(default=3)
+    next_attempt_at = models.DateTimeField(default=timezone.now)
+    provider_message_id = models.CharField(max_length=255, blank=True)
+    last_error_code = models.CharField(max_length=64, blank=True)
+    last_error = models.TextField(blank=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['created_at', 'id']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['alert', 'registration'],
+                name='unique_alert_push_registration',
+            ),
+        ]
 
 
 class PpgAnalysisRecord(models.Model):

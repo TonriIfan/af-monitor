@@ -2,12 +2,14 @@ import csv
 import importlib.util
 import json
 import pickle
+from decimal import Decimal
 from pathlib import Path
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.test import override_settings
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
@@ -19,13 +21,16 @@ from .ml import analyze_structured_measurement_window
 from .models import (
     AiSettings,
     AlertEvent,
+    AlertPushDelivery,
+    AnalysisResult,
     Measurement,
     PpgAnalysisRecord,
     PushDeviceRegistration,
     RawPacket,
     SymptomFeedback,
 )
-from .services import parse_packet
+from .push import PushSendResult
+from .services import dispatch_alert_push_delivery, parse_packet
 
 
 def build_ppg_window(
@@ -64,6 +69,21 @@ def build_heart_rate_frame_hex(
 class DummyStructuredAfEstimator:
     def predict_proba(self, rows):
         return [[0.08, 0.92] for _ in rows]
+
+
+class SuccessfulPushProvider:
+    def send_alert(self, delivery, payload):
+        return PushSendResult(success=True, message_id='fcm-message-001')
+
+
+class InvalidTokenPushProvider:
+    def send_alert(self, delivery, payload):
+        return PushSendResult(
+            success=False,
+            error_code='UNREGISTERED',
+            error_message='registration token is not registered',
+            invalid_token=True,
+        )
 
 
 class PacketParserTests(APITestCase):
@@ -109,6 +129,76 @@ class PacketIngestApiTests(APITestCase):
         DeviceBinding.objects.create(user=self.user, device=self.device)
         token = Token.objects.create(user=self.user)
         self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+
+    def _create_measurement_record(
+        self,
+        *,
+        user=None,
+        device=None,
+        measured_at=None,
+        heart_rate=72,
+        risk_level='low',
+        should_alert=False,
+        trigger_codes=None,
+    ):
+        user = user or self.user
+        device = device or self.device
+        measured_at = measured_at or timezone.now()
+        frame_hex = build_heart_rate_frame_hex(heart_rate)
+        raw_packet = RawPacket.objects.create(
+            device=device,
+            user=user,
+            source='test-fixture',
+            client_time=measured_at,
+            raw_payload={
+                'device_id': device.device_id,
+                'client_time': measured_at.isoformat(),
+                'source': 'test-fixture',
+                'payload': {'frame_hex': frame_hex},
+            },
+            frame_hex=frame_hex,
+            frame_bytes=[],
+            command_code='0x31',
+            subcommand_code='0x00',
+            packet_kind='heart_rate',
+        )
+        measurement = Measurement.objects.create(
+            raw_packet=raw_packet,
+            device=device,
+            user=user,
+            measured_at=measured_at,
+            packet_kind='heart_rate',
+            parsed={'heartRate': heart_rate},
+            heart_rate=heart_rate,
+        )
+        analysis_result = AnalysisResult.objects.create(
+            measurement=measurement,
+            raw_packet=raw_packet,
+            device=device,
+            user=user,
+            algorithm_version='structured-ml-primary-v1',
+            risk_level=risk_level,
+            risk_score=Decimal('0.88') if should_alert else Decimal('0.10'),
+            labels=['测试标签'],
+            triggers=trigger_codes or [],
+            details={},
+            summary='测试摘要',
+            should_alert=should_alert,
+        )
+        alert = None
+        if should_alert:
+            alert = AlertEvent.objects.create(
+                device=device,
+                user=user,
+                measurement=measurement,
+                analysis_result=analysis_result,
+                level=risk_level,
+                title='测试告警',
+                message='测试告警内容',
+                trigger_codes=trigger_codes or [],
+                dedupe_key=f'{device.device_id}-{measurement.id}',
+            )
+        return measurement, analysis_result, alert
 
     def test_packet_ingest_accepts_web_bluetooth_source(self):
         """Webapp via Web Bluetooth uploads packets with source='web-bluetooth' while authenticated."""
@@ -271,6 +361,55 @@ class PacketIngestApiTests(APITestCase):
         )
         self.assertEqual(read_response.status_code, status.HTTP_200_OK)
         self.assertTrue(read_response.data["is_read"])
+
+    def test_measurement_list_defaults_to_recent_100_and_supports_offset(self):
+        base_time = timezone.datetime(2026, 3, 15, 8, 0, tzinfo=timezone.get_current_timezone())
+        measurements = []
+        for index in range(120):
+            measurement, _, _ = self._create_measurement_record(
+                measured_at=base_time + timezone.timedelta(minutes=index),
+                heart_rate=70 + index % 30,
+            )
+            measurements.append(measurement)
+        expected = sorted(measurements, key=lambda item: (item.measured_at, item.id), reverse=True)
+
+        default_response = self.client.get("/api/v1/measurements")
+        offset_response = self.client.get("/api/v1/measurements?limit=40&offset=30")
+
+        self.assertEqual(default_response.status_code, status.HTTP_200_OK)
+        self.assertIsInstance(default_response.data, list)
+        self.assertEqual(len(default_response.data), 100)
+        self.assertEqual(default_response.data[0]["id"], expected[0].id)
+        self.assertEqual(offset_response.status_code, status.HTTP_200_OK)
+        self.assertIsInstance(offset_response.data, list)
+        self.assertEqual(len(offset_response.data), 40)
+        self.assertEqual(offset_response.data[0]["id"], expected[30].id)
+
+    def test_alert_list_defaults_to_recent_100_and_supports_offset(self):
+        base_time = timezone.datetime(2026, 3, 15, 9, 0, tzinfo=timezone.get_current_timezone())
+        alerts = []
+        for index in range(120):
+            _, _, alert = self._create_measurement_record(
+                measured_at=base_time + timezone.timedelta(minutes=index),
+                heart_rate=120 + index % 20,
+                risk_level=AlertEvent.LEVEL_HIGH,
+                should_alert=True,
+                trigger_codes=["realtime_tachycardia"],
+            )
+            alerts.append(alert)
+        expected = sorted(alerts, key=lambda item: (item.created_at, item.id), reverse=True)
+
+        default_response = self.client.get("/api/v1/alerts")
+        offset_response = self.client.get("/api/v1/alerts?limit=25&offset=20")
+
+        self.assertEqual(default_response.status_code, status.HTTP_200_OK)
+        self.assertIsInstance(default_response.data, list)
+        self.assertEqual(len(default_response.data), 100)
+        self.assertEqual(default_response.data[0]["id"], expected[0].id)
+        self.assertEqual(offset_response.status_code, status.HTTP_200_OK)
+        self.assertIsInstance(offset_response.data, list)
+        self.assertEqual(len(offset_response.data), 25)
+        self.assertEqual(offset_response.data[0]["id"], expected[20].id)
 
     def test_device_status_returns_latest_measurement(self):
         self.client.post(
@@ -619,6 +758,53 @@ class PacketIngestApiTests(APITestCase):
         self.assertEqual(read_all_response.status_code, status.HTTP_200_OK)
         self.assertEqual(AlertEvent.objects.filter(status="unread").count(), 0)
 
+    def test_admin_read_all_marks_all_non_admin_alerts(self):
+        other_user = get_user_model().objects.create_user(
+            username="batch-alert-user",
+            password="pass12345",
+        )
+        other_device = Device.objects.create(
+            device_id="ring-002", source="wechat-miniapp"
+        )
+        DeviceBinding.objects.create(user=other_user, device=other_device)
+
+        self._create_measurement_record(
+            measured_at=timezone.datetime(
+                2026, 3, 15, 16, 15, tzinfo=timezone.get_current_timezone()
+            ),
+            heart_rate=126,
+            risk_level=AlertEvent.LEVEL_HIGH,
+            should_alert=True,
+            trigger_codes=["realtime_tachycardia"],
+        )
+        self._create_measurement_record(
+            user=other_user,
+            device=other_device,
+            measured_at=timezone.datetime(
+                2026, 3, 15, 16, 20, tzinfo=timezone.get_current_timezone()
+            ),
+            heart_rate=132,
+            risk_level=AlertEvent.LEVEL_CRITICAL,
+            should_alert=True,
+            trigger_codes=["realtime_tachycardia"],
+        )
+
+        admin = get_user_model().objects.create_user(
+            username="global-alert-admin",
+            password="pass12345",
+            role=get_user_model().Role.ADMIN,
+            is_staff=True,
+            is_superuser=True,
+        )
+        admin_token = Token.objects.create(user=admin)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {admin_token.key}")
+
+        response = self.client.post("/api/v1/alerts/read-all", {}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["updated_count"], 2)
+        self.assertEqual(AlertEvent.objects.filter(status="unread").count(), 0)
+
     def test_chart_analysis_and_reports_endpoints(self):
         for timestamp, frame_hex in [
             ("2026-03-10T10:00:00+08:00", "00 00 31 00 03 60 20 20 70 0E"),
@@ -707,8 +893,97 @@ class PacketIngestApiTests(APITestCase):
                 user=self.user, device_token="push-token-001"
             ).exists()
         )
+        self.assertEqual(push_response.data["provider"], "fcm")
         self.assertEqual(chat_response.status_code, status.HTTP_200_OK)
         self.assertIn("content", chat_response.data)
+
+    def test_alert_creation_enqueues_push_delivery_for_active_token(self):
+        PushDeviceRegistration.objects.create(
+            user=self.user,
+            device_token="push-token-alert-001",
+            platform="android",
+        )
+
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(
+                "/api/v1/packets",
+                {
+                    "device_id": "ring-001",
+                    "client_time": "2026-03-15T18:00:00+08:00",
+                    "source": "wechat-miniapp",
+                    "payload": {"frame_hex": "00 00 31 00 03 78 28 55 8E 0E"},
+                },
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(response.data["analysis"]["should_alert"])
+        self.assertEqual(AlertPushDelivery.objects.count(), 1)
+        delivery = AlertPushDelivery.objects.first()
+        self.assertEqual(delivery.status, AlertPushDelivery.STATUS_PENDING)
+        self.assertEqual(delivery.device_token, "push-token-alert-001")
+        self.assertEqual(delivery.provider, "fcm")
+
+        alerts_response = self.client.get("/api/v1/alerts?device_id=ring-001")
+
+        self.assertEqual(alerts_response.status_code, status.HTTP_200_OK)
+        summary = alerts_response.data[0]["push_delivery_summary"]
+        self.assertEqual(summary["status"], "pending")
+        self.assertEqual(summary["pending_count"], 1)
+
+    def test_alert_push_dispatch_marks_delivery_sent(self):
+        registration = PushDeviceRegistration.objects.create(
+            user=self.user,
+            device_token="push-token-send-001",
+            platform="android",
+        )
+        with self.captureOnCommitCallbacks(execute=True):
+            self.client.post(
+                "/api/v1/packets",
+                {
+                    "device_id": "ring-001",
+                    "client_time": "2026-03-15T18:10:00+08:00",
+                    "source": "wechat-miniapp",
+                    "payload": {"frame_hex": "00 00 31 00 03 78 28 55 8E 0E"},
+                },
+                format="json",
+            )
+        delivery = AlertPushDelivery.objects.get(registration=registration)
+
+        dispatch_alert_push_delivery(delivery, provider=SuccessfulPushProvider())
+        delivery.refresh_from_db()
+
+        self.assertEqual(delivery.status, AlertPushDelivery.STATUS_SENT)
+        self.assertEqual(delivery.provider_message_id, "fcm-message-001")
+        self.assertEqual(delivery.attempts, 1)
+        self.assertIsNotNone(delivery.sent_at)
+
+    def test_alert_push_dispatch_deactivates_invalid_token(self):
+        registration = PushDeviceRegistration.objects.create(
+            user=self.user,
+            device_token="push-token-invalid-001",
+            platform="android",
+        )
+        with self.captureOnCommitCallbacks(execute=True):
+            self.client.post(
+                "/api/v1/packets",
+                {
+                    "device_id": "ring-001",
+                    "client_time": "2026-03-15T18:20:00+08:00",
+                    "source": "wechat-miniapp",
+                    "payload": {"frame_hex": "00 00 31 00 03 78 28 55 8E 0E"},
+                },
+                format="json",
+            )
+        delivery = AlertPushDelivery.objects.get(registration=registration)
+
+        dispatch_alert_push_delivery(delivery, provider=InvalidTokenPushProvider())
+        delivery.refresh_from_db()
+        registration.refresh_from_db()
+
+        self.assertEqual(delivery.status, AlertPushDelivery.STATUS_FAILED)
+        self.assertEqual(delivery.last_error_code, "UNREGISTERED")
+        self.assertFalse(registration.is_active)
 
     def test_ppg_analyze_endpoint_creates_record(self):
         response = self.client.post(

@@ -41,6 +41,16 @@
             <el-tag :type="row.is_read ? 'info' : 'warning'">{{ row.is_read ? '已读' : '未读' }}</el-tag>
           </template>
         </el-table-column>
+        <el-table-column label="推送状态" min-width="220">
+          <template #default="{ row }">
+            <el-tag :type="pushStatusTagType(row.push_delivery_summary?.status)">
+              {{ row.push_delivery_summary?.status_label || '未入队' }}
+            </el-tag>
+            <div v-if="row.push_delivery_summary?.latest_error" class="table-helper">
+              {{ row.push_delivery_summary.latest_error }}
+            </div>
+          </template>
+        </el-table-column>
         <el-table-column label="操作" min-width="140" fixed="right">
           <template #default="{ row }">
             <el-button v-if="!row.is_read" link type="primary" @click="markRead(row.id)">标记已读</el-button>
@@ -64,6 +74,13 @@ import { formatDateTime, riskLabel, riskTagType } from '../utils/format'
 const auth = useAuthStore()
 const management = useManagementStore()
 const alerts = ref<Array<Record<string, any>>>([])
+
+function pushStatusTagType(status?: string) {
+  if (status === 'sent') return 'success'
+  if (status === 'failed') return 'danger'
+  if (status === 'pending') return 'warning'
+  return 'info'
+}
 
 function focusUser(userId?: number, username?: string) {
   if (!userId) return

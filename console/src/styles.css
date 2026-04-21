@@ -253,6 +253,14 @@ h1, h2, h3, h4, .brand-block h1, .stat-card__value {
   letter-spacing: 0.05em;
 }
 
+.table-helper {
+  margin-top: 0.35rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
 .el-button--primary {
   background: var(--ink) !important;
   border: none !important;

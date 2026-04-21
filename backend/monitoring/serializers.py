@@ -1,6 +1,14 @@
 from rest_framework import serializers
 
-from .models import AiSettings, AlertEvent, Measurement, PpgAnalysisRecord, PushDeviceRegistration, SymptomFeedback
+from .models import (
+    AiSettings,
+    AlertEvent,
+    AlertPushDelivery,
+    Measurement,
+    PpgAnalysisRecord,
+    PushDeviceRegistration,
+    SymptomFeedback,
+)
 from .services import trigger_labels
 
 
@@ -82,6 +90,7 @@ class AlertSerializer(serializers.ModelSerializer):
     user_id = serializers.IntegerField(source='user.id', read_only=True)
     username = serializers.CharField(source='user.username', read_only=True, default='')
     trigger_labels = serializers.SerializerMethodField()
+    push_delivery_summary = serializers.SerializerMethodField()
 
     class Meta:
         model = AlertEvent
@@ -96,6 +105,7 @@ class AlertSerializer(serializers.ModelSerializer):
             'message',
             'trigger_codes',
             'trigger_labels',
+            'push_delivery_summary',
             'status',
             'is_read',
             'read_at',
@@ -104,6 +114,51 @@ class AlertSerializer(serializers.ModelSerializer):
 
     def get_trigger_labels(self, obj):
         return trigger_labels(obj.trigger_codes)
+
+    def get_push_delivery_summary(self, obj):
+        deliveries = list(obj.push_deliveries.all())
+        counts = {
+            AlertPushDelivery.STATUS_PENDING: 0,
+            AlertPushDelivery.STATUS_SENT: 0,
+            AlertPushDelivery.STATUS_FAILED: 0,
+            AlertPushDelivery.STATUS_SKIPPED: 0,
+        }
+        latest_error = ''
+        for delivery in deliveries:
+            counts[delivery.status] = counts.get(delivery.status, 0) + 1
+            if delivery.last_error:
+                latest_error = delivery.last_error
+
+        total = len(deliveries)
+        status_key = 'not_queued'
+        status_label = '未入队'
+        if total:
+            if counts[AlertPushDelivery.STATUS_SENT] == total:
+                status_key = AlertPushDelivery.STATUS_SENT
+                status_label = '已发送'
+            elif counts[AlertPushDelivery.STATUS_PENDING]:
+                status_key = AlertPushDelivery.STATUS_PENDING
+                status_label = '待发送'
+            elif counts[AlertPushDelivery.STATUS_FAILED]:
+                status_key = AlertPushDelivery.STATUS_FAILED
+                status_label = '发送失败'
+            elif counts[AlertPushDelivery.STATUS_SKIPPED] == total:
+                status_key = AlertPushDelivery.STATUS_SKIPPED
+                status_label = '已跳过'
+            else:
+                status_key = 'mixed'
+                status_label = '部分完成'
+
+        return {
+            'status': status_key,
+            'status_label': status_label,
+            'total': total,
+            'pending_count': counts[AlertPushDelivery.STATUS_PENDING],
+            'sent_count': counts[AlertPushDelivery.STATUS_SENT],
+            'failed_count': counts[AlertPushDelivery.STATUS_FAILED],
+            'skipped_count': counts[AlertPushDelivery.STATUS_SKIPPED],
+            'latest_error': latest_error,
+        }
 
 
 class AlertStateUpdateSerializer(serializers.ModelSerializer):
@@ -208,6 +263,7 @@ class PushDeviceRegistrationSerializer(serializers.ModelSerializer):
         model = PushDeviceRegistration
         fields = [
             'id',
+            'provider',
             'device_token',
             'platform',
             'app_version',
