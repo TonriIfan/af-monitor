@@ -1,0 +1,62 @@
+{
+  "output_path": "G:\\bishe\\yf-monitor\\backend\\ml_models\\cpsc2021_rr_experiment.pkl",
+  "dataset": "cpsc2021_rr_windows.csv",
+  "model_name": "lightgbm",
+  "model_version": "cpsc2021-rr-20260420053153",
+  "feature_names": [
+    "duration_seconds",
+    "hr_mean",
+    "hr_min",
+    "hr_max",
+    "hr_std",
+    "ibi_mean",
+    "ibi_std",
+    "ibi_cv",
+    "rmssd",
+    "pnn50",
+    "tachycardia_ratio",
+    "bradycardia_ratio",
+    "irregular_ratio",
+    "peak_count",
+    "peak_density",
+    "flat_ratio"
+  ],
+  "decision_threshold": 0.9,
+  "metrics": {
+    "auroc": 0.6546781963648767,
+    "f1": 0.20917431192660552,
+    "precision": 0.2,
+    "recall": 0.21923076923076923
+  },
+  "baseline_metrics": {
+    "lightgbm": {
+      "threshold": 0.9,
+      "auroc": 0.6546781963648767,
+      "f1": 0.20917431192660552,
+      "precision": 0.2,
+      "recall": 0.21923076923076923
+    },
+    "logistic-regression": {
+      "threshold": 0.8,
+      "auroc": 0.6414859526211827,
+      "f1": 0.18284424379232506,
+      "precision": 0.12939297124600638,
+      "recall": 0.31153846153846154
+    },
+    "hist-gradient-boosting": {
+      "threshold": 0.35,
+      "auroc": 0.6275929386519632,
+      "f1": 0.19798657718120805,
+      "precision": 0.17559523809523808,
+      "recall": 0.22692307692307692
+    }
+  },
+  "class_distribution": {
+    "total": 56353,
+    "positive": 2832,
+    "negative": 53521,
+    "positive_ratio": 0.050255
+  },
+  "train_samples": 45267,
+  "test_samples": 11086
+}

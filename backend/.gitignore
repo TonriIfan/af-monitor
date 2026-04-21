@@ -4,6 +4,5 @@ db.sqlite3
 .env
 
 # ML artifacts and local scratch data
-ml_models/
 .tmp-tests/
 .tmp-pip/

@@ -1,0 +1,62 @@
+{
+  "output_path": "G:\\bishe\\yf-monitor\\backend\\ml_models\\structured_af_model.pkl",
+  "dataset": "structured_af_windows.csv",
+  "model_name": "lightgbm",
+  "model_version": "structured-af-20260418095907",
+  "feature_names": [
+    "duration_seconds",
+    "hr_mean",
+    "hr_min",
+    "hr_max",
+    "hr_std",
+    "ibi_mean",
+    "ibi_std",
+    "ibi_cv",
+    "rmssd",
+    "pnn50",
+    "tachycardia_ratio",
+    "bradycardia_ratio",
+    "irregular_ratio",
+    "peak_count",
+    "peak_density",
+    "flat_ratio"
+  ],
+  "decision_threshold": 0.65,
+  "metrics": {
+    "auroc": 0.7831608714685384,
+    "f1": 0.25189599133261104,
+    "precision": 0.190028606456886,
+    "recall": 0.37349397590361444
+  },
+  "baseline_metrics": {
+    "lightgbm": {
+      "threshold": 0.65,
+      "auroc": 0.7831608714685384,
+      "f1": 0.25189599133261104,
+      "precision": 0.190028606456886,
+      "recall": 0.37349397590361444
+    },
+    "logistic-regression": {
+      "threshold": 0.55,
+      "auroc": 0.7176326205960484,
+      "f1": 0.16917885264341959,
+      "precision": 0.09836494440810988,
+      "recall": 0.6040160642570281
+    },
+    "hist-gradient-boosting": {
+      "threshold": 0.1,
+      "auroc": 0.7777673782873746,
+      "f1": 0.24140127388535032,
+      "precision": 0.2,
+      "recall": 0.3044176706827309
+    }
+  },
+  "class_distribution": {
+    "total": 128513,
+    "positive": 6224,
+    "negative": 122289,
+    "positive_ratio": 0.048431
+  },
+  "train_samples": 102810,
+  "test_samples": 25703
+}
