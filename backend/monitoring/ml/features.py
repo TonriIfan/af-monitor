@@ -83,6 +83,20 @@ def _irregular_ratio(ibis: list[float]) -> float:
     return sum(1 for item in diffs if item > 0.08) / len(diffs) if diffs else 0.0
 
 
+def _successive_change_ratio(values: list[float], threshold: float) -> float:
+    if len(values) < 2:
+        return 0.0
+    diffs = [abs(values[index] - values[index - 1]) for index in range(1, len(values))]
+    return sum(1 for item in diffs if item >= threshold) / len(diffs) if diffs else 0.0
+
+
+def _diff_stats(values: list[float]) -> tuple[float, float]:
+    if len(values) < 2:
+        return 0.0, 0.0
+    diffs = [abs(values[index] - values[index - 1]) for index in range(1, len(values))]
+    return _safe_mean(diffs), _safe_std(diffs)
+
+
 def _flat_ratio_from_samples(samples: list[float], tolerance: float = 0.01) -> float:
     if len(samples) < 2:
         return 1.0
@@ -103,14 +117,23 @@ def extract_structured_features_from_heart_rate_series(
     ibi_mean = _safe_mean(ibis)
     ibi_std = _safe_std(ibis)
     ibi_cv = ibi_std / ibi_mean if ibi_mean else 0.0
+    hr_min = min(clean_heart_rates) if clean_heart_rates else 0.0
+    hr_max = max(clean_heart_rates) if clean_heart_rates else 0.0
+    hr_range = hr_max - hr_min
+    hr_diff_mean, hr_diff_std = _diff_stats(clean_heart_rates)
     estimated_peak_count = (hr_mean * duration_seconds / 60.0) if hr_mean and duration_seconds else float(len(clean_heart_rates))
 
     return {
         'duration_seconds': round(duration_seconds, 4),
         'hr_mean': round(hr_mean, 4),
-        'hr_min': round(min(clean_heart_rates), 4) if clean_heart_rates else 0.0,
-        'hr_max': round(max(clean_heart_rates), 4) if clean_heart_rates else 0.0,
+        'hr_min': round(hr_min, 4),
+        'hr_max': round(hr_max, 4),
         'hr_std': round(hr_std, 4),
+        'hr_range': round(hr_range, 4),
+        'hr_range_ratio': round(hr_range / hr_mean, 4) if hr_mean else 0.0,
+        'hr_variation_index': round(hr_std / hr_mean, 4) if hr_mean else 0.0,
+        'hr_diff_mean': round(hr_diff_mean, 4),
+        'hr_diff_std': round(hr_diff_std, 4),
         'ibi_mean': round(ibi_mean, 4),
         'ibi_std': round(ibi_std, 4),
         'ibi_cv': round(ibi_cv, 4),
@@ -129,6 +152,15 @@ def extract_structured_features_from_heart_rate_series(
         if clean_heart_rates
         else 0.0,
         'irregular_ratio': round(_irregular_ratio(ibis), 4),
+        'instability_index': round(ibi_cv + _pnn50(ibis) + _irregular_ratio(ibis), 4),
+        'successive_change_ratio': round(_successive_change_ratio(clean_heart_rates, 8.0), 4),
+        'extreme_hr_ratio': round(
+            sum(1 for value in clean_heart_rates if value > 120 or value < 45) / len(clean_heart_rates),
+            4,
+        )
+        if clean_heart_rates
+        else 0.0,
+        'valid_sample_count': float(len(clean_heart_rates)),
         'peak_count': round(estimated_peak_count, 4),
         'peak_density': round(estimated_peak_count / duration_seconds, 4) if duration_seconds else 0.0,
         'flat_ratio': round(flat_ratio, 4),
@@ -147,14 +179,23 @@ def extract_structured_features_from_rr_intervals(
     ibi_mean = _safe_mean(clean_ibis)
     ibi_std = _safe_std(clean_ibis)
     ibi_cv = ibi_std / ibi_mean if ibi_mean else 0.0
+    hr_min = min(heart_rates) if heart_rates else 0.0
+    hr_max = max(heart_rates) if heart_rates else 0.0
+    hr_range = hr_max - hr_min
+    hr_diff_mean, hr_diff_std = _diff_stats(heart_rates)
     estimated_peak_count = (hr_mean * duration_seconds / 60.0) if hr_mean and duration_seconds else float(len(clean_ibis))
 
     return {
         'duration_seconds': round(duration_seconds, 4),
         'hr_mean': round(hr_mean, 4),
-        'hr_min': round(min(heart_rates), 4) if heart_rates else 0.0,
-        'hr_max': round(max(heart_rates), 4) if heart_rates else 0.0,
+        'hr_min': round(hr_min, 4),
+        'hr_max': round(hr_max, 4),
         'hr_std': round(hr_std, 4),
+        'hr_range': round(hr_range, 4),
+        'hr_range_ratio': round(hr_range / hr_mean, 4) if hr_mean else 0.0,
+        'hr_variation_index': round(hr_std / hr_mean, 4) if hr_mean else 0.0,
+        'hr_diff_mean': round(hr_diff_mean, 4),
+        'hr_diff_std': round(hr_diff_std, 4),
         'ibi_mean': round(ibi_mean, 4),
         'ibi_std': round(ibi_std, 4),
         'ibi_cv': round(ibi_cv, 4),
@@ -163,6 +204,10 @@ def extract_structured_features_from_rr_intervals(
         'tachycardia_ratio': round(sum(1 for value in heart_rates if value > 110) / len(heart_rates), 4) if heart_rates else 0.0,
         'bradycardia_ratio': round(sum(1 for value in heart_rates if value < 50) / len(heart_rates), 4) if heart_rates else 0.0,
         'irregular_ratio': round(_irregular_ratio(clean_ibis), 4),
+        'instability_index': round(ibi_cv + _pnn50(clean_ibis) + _irregular_ratio(clean_ibis), 4),
+        'successive_change_ratio': round(_successive_change_ratio(heart_rates, 8.0), 4),
+        'extreme_hr_ratio': round(sum(1 for value in heart_rates if value > 120 or value < 45) / len(heart_rates), 4) if heart_rates else 0.0,
+        'valid_sample_count': float(len(heart_rates)),
         'peak_count': round(estimated_peak_count, 4),
         'peak_density': round(estimated_peak_count / duration_seconds, 4) if duration_seconds else 0.0,
         'flat_ratio': round(flat_ratio, 4),

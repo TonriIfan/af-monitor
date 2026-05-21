@@ -1,8 +1,8 @@
 {
-  "output_path": "G:\\bishe\\yf-monitor\\backend\\ml_models\\structured_af_model.pkl",
+  "output_path": "ml_models\\structured_af_model.pkl",
   "dataset": "structured_af_windows.csv",
   "model_name": "lightgbm",
-  "model_version": "structured-af-20260418095907",
+  "model_version": "structured-af-20260512163105",
   "feature_names": [
     "duration_seconds",
     "hr_mean",
@@ -19,36 +19,97 @@
     "irregular_ratio",
     "peak_count",
     "peak_density",
-    "flat_ratio"
+    "flat_ratio",
+    "hr_range",
+    "hr_range_ratio",
+    "hr_variation_index",
+    "hr_diff_mean",
+    "hr_diff_std",
+    "successive_change_ratio",
+    "extreme_hr_ratio",
+    "valid_sample_count",
+    "instability_index"
   ],
-  "decision_threshold": 0.65,
+  "decision_threshold": 0.528,
   "metrics": {
-    "auroc": 0.7831608714685384,
-    "f1": 0.25189599133261104,
-    "precision": 0.190028606456886,
-    "recall": 0.37349397590361444
+    "auroc": 0.6914343196287713,
+    "pr_auc": 0.04381452095956588,
+    "f1": 0.09081346423562413,
+    "precision": 0.05080423695566889,
+    "recall": 0.4273927392739274,
+    "confusion_matrix": {
+      "tn": 17721,
+      "fp": 4839,
+      "fn": 347,
+      "tp": 259
+    },
+    "specificity": 0.7855053191489362,
+    "balanced_accuracy": 0.6064490292114317,
+    "threshold_search": {
+      "candidate_count": 118,
+      "objective": "max_f1_then_recall_specificity_precision"
+    }
   },
   "baseline_metrics": {
     "lightgbm": {
-      "threshold": 0.65,
-      "auroc": 0.7831608714685384,
-      "f1": 0.25189599133261104,
-      "precision": 0.190028606456886,
-      "recall": 0.37349397590361444
+      "threshold": 0.528,
+      "auroc": 0.6914343196287713,
+      "pr_auc": 0.04381452095956588,
+      "f1": 0.09081346423562413,
+      "precision": 0.05080423695566889,
+      "recall": 0.4273927392739274,
+      "confusion_matrix": {
+        "tn": 17721,
+        "fp": 4839,
+        "fn": 347,
+        "tp": 259
+      },
+      "specificity": 0.7855053191489362,
+      "balanced_accuracy": 0.6064490292114317,
+      "threshold_search": {
+        "candidate_count": 118,
+        "objective": "max_f1_then_recall_specificity_precision"
+      }
     },
     "logistic-regression": {
-      "threshold": 0.55,
-      "auroc": 0.7176326205960484,
-      "f1": 0.16917885264341959,
-      "precision": 0.09836494440810988,
-      "recall": 0.6040160642570281
+      "threshold": 0.5751,
+      "auroc": 0.6605677123563419,
+      "pr_auc": 0.043924961756825795,
+      "f1": 0.08455420678107994,
+      "precision": 0.048418024928092045,
+      "recall": 0.3333333333333333,
+      "confusion_matrix": {
+        "tn": 18590,
+        "fp": 3970,
+        "fn": 404,
+        "tp": 202
+      },
+      "specificity": 0.8240248226950354,
+      "balanced_accuracy": 0.5786790780141844,
+      "threshold_search": {
+        "candidate_count": 118,
+        "objective": "max_f1_then_recall_specificity_precision"
+      }
     },
     "hist-gradient-boosting": {
-      "threshold": 0.1,
-      "auroc": 0.7777673782873746,
-      "f1": 0.24140127388535032,
-      "precision": 0.2,
-      "recall": 0.3044176706827309
+      "threshold": 0.0544,
+      "auroc": 0.69083825603305,
+      "pr_auc": 0.043407990973480595,
+      "f1": 0.09217322208978942,
+      "precision": 0.05010799136069115,
+      "recall": 0.5742574257425742,
+      "confusion_matrix": {
+        "tn": 15963,
+        "fp": 6597,
+        "fn": 258,
+        "tp": 348
+      },
+      "specificity": 0.7075797872340426,
+      "balanced_accuracy": 0.6409186064883083,
+      "threshold_search": {
+        "candidate_count": 118,
+        "objective": "max_f1_then_recall_specificity_precision"
+      }
     }
   },
   "class_distribution": {
@@ -57,6 +118,30 @@
     "negative": 122289,
     "positive_ratio": 0.048431
   },
-  "train_samples": 102810,
-  "test_samples": 25703
+  "dataset_summary": {
+    "sample_count": 128513,
+    "patient_count": 8,
+    "group_count": 84,
+    "record_count": 84,
+    "feature_count": 25
+  },
+  "split": {
+    "strategy": "stratified-group-kfold",
+    "train_groups": 65,
+    "test_groups": 19,
+    "train_distribution": {
+      "total": 105347,
+      "positive": 5618,
+      "negative": 99729,
+      "positive_ratio": 0.053329
+    },
+    "test_distribution": {
+      "total": 23166,
+      "positive": 606,
+      "negative": 22560,
+      "positive_ratio": 0.026159
+    }
+  },
+  "train_samples": 105347,
+  "test_samples": 23166
 }
